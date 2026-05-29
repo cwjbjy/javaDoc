@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec new *)",
+      "Bash(openspec status *)",
+      "Bash(openspec instructions *)",
+      "Bash(./mvnw compile *)",
+      "Bash(cp -r \"D:/uniapp/cookbook_api/public/images/market/\"* \"D:/javaProject/demo1/static/images/market/\")",
+      "Bash(rtk ls *)",
+      "Bash(rtk du *)",
+      "Bash(mongosh mongodb://127.0.0.1:27017/market --eval \"db.markets.countDocuments\\(\\)\" --quiet)",
+      "Bash(mongosh --host 127.0.0.1 --port 27017 --eval \"db.getSiblingDB\\('market'\\).markets.countDocuments\\(\\)\" --quiet)",
+      "Bash(./mvnw spring-boot:run -q)",
+      "Bash(rtk read *)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist /FI \"PID eq 21380\")",
+      "Bash(rtk ps *)",
+      "PowerShell(netstat *)",
+      "Bash(rtk curl *)",
+      "Bash(node *)",
+      "Bash(./mvnw spring-boot:run -q -Dspring-boot.run.jvmArguments=\"-Dlogging.level.org.springframework.data.mongodb=DEBUG\")",
+      "WebSearch",
+      "Bash(awk '{print $5}')",
+      "Bash(taskkill //F //PID 9912)",
+      "Bash(rtk grep *)",
+      "Bash(openspec list *)",
+      "Bash(./mvnw clean *)"
+    ]
+  }
+}
