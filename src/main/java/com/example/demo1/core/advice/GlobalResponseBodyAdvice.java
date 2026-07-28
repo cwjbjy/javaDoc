@@ -22,8 +22,9 @@ public class GlobalResponseBodyAdvice implements ResponseBodyAdvice<Object> {
     public Object beforeBodyWrite(Object body, MethodParameter returnType,
                                   MediaType selectedContentType, Class selectedConverterType,
                                   ServerHttpRequest request, ServerHttpResponse response) {
-        // Don't wrap responses that already have the standard format (error or manual)
-        if (body instanceof Map && ((Map<?, ?>) body).containsKey("code")) {
+        // Don't wrap Springdoc OpenAPI responses, otherwise Swagger UI won't work
+        String path = request.getURI().getPath();
+        if (path.startsWith("/v3/api-docs") || path.startsWith("/swagger-ui")) {
             return body;
         }
         Map<String, Object> result = new LinkedHashMap<>();

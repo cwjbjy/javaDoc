@@ -1,8 +1,12 @@
 package com.example.demo1.module.market.service;
 
+import com.example.demo1.module.market.dto.request.CreateCategoryDTO;
+import com.example.demo1.module.market.dto.response.CategoryResponse;
 import com.example.demo1.module.market.entity.Market;
 import com.example.demo1.module.market.entity.MarketRepository;
+import com.example.demo1.module.market.mapper.MarketMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -12,43 +16,36 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MarketService {
 
     private final MarketRepository marketRepository;
+    private final MarketMapper marketMapper;
     private final MongoTemplate mongoTemplate;
 
-    public Market addCategory(String name, String image) {
-        if (marketRepository.findAll().stream().anyMatch(m -> m.getName().equals(name))) {
+    public CategoryResponse addCategory(CreateCategoryDTO dto) {
+        if (marketRepository.findByName(dto.name()).isPresent()) {
             throw new IllegalArgumentException("分类名称已存在");
         }
-        Market market = new Market();
-        market.setName(name);
-        market.setImage(image);
-        return marketRepository.save(market);
+        Market saved = marketRepository.save(marketMapper.toEntity(dto));
+        return marketMapper.toResponse(saved);
     }
 
-    public Map<String, Object> deleteCategory(String id) {
+    public String deleteCategory(String id) {
         Market market = marketRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("分类不存在"));
 
         deleteImageFile(market.getImage());
         marketRepository.deleteById(id);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("code", 200);
-        result.put("message", "success");
-        result.put("data", "删除成功");
-        return result;
+        return "删除成功";
     }
 
-    public Market updateCategory(String id, String name, String image) {
-        boolean duplicate = marketRepository.findAll().stream()
-                .anyMatch(m -> m.getName().equals(name) && !m.getId().equals(id));
+    public CategoryResponse updateCategory(String id, String name, String image) {
+        boolean duplicate = marketRepository.existsByNameAndIdNot(name, id);
         if (duplicate) {
             throw new IllegalArgumentException("分类名称已存在");
         }
@@ -57,17 +54,20 @@ public class MarketService {
                 .orElseThrow(() -> new IllegalArgumentException("分类不存在"));
         market.setName(name);
         market.setImage(image);
-        return marketRepository.save(market);
+        Market saved = marketRepository.save(market);
+        return marketMapper.toResponse(saved);
     }
 
-    public List<Market> getAll() {
-        return marketRepository.findAll();
+    public List<CategoryResponse> getAll() {
+        List<Market> markets = marketRepository.findAll();
+        return marketMapper.toResponseList(markets);
     }
 
-    public List<Market> findFoods(String text) {
+    public List<CategoryResponse> findFoods(String text) {
         Query query = Query.query(Criteria.where("foods.burden")
                 .regex(".*" + text + ".*", "i"));
-        return mongoTemplate.find(query, Market.class);
+        List<Market> markets = mongoTemplate.find(query, Market.class);
+        return marketMapper.toResponseList(markets);
     }
 
     public void deleteImageFile(String imageUrl) {

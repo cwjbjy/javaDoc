@@ -1,11 +1,9 @@
 server:
   port: 9001
-  servlet:
-    context-path: /api
 
 spring:
   mongodb:
-      uri: mongodb://market:123456@47.100.239.163:27017/market
+    uri: mongodb://market:123456@47.100.239.163:27017/market
   servlet:
     multipart:
       max-file-size: 10MB
@@ -14,3 +12,10 @@ spring:
 app:
   upload:
     path: static/images/market/
+
+springdoc:
+  api-docs:
+    enabled: false
+
+knife4j:
+  enable: false
