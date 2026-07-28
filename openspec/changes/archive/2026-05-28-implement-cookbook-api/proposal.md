@@ -30,6 +30,6 @@
 ## Impact
 
 - `pom.xml`: 移除Thymeleaf依赖，新增spring-boot-starter-data-mongodb、springdoc-openapi-starter-webmvc-ui
-- `src/main/java/com/example/demo1/`: 按core/module拆分包结构
+- `src/main/java/com/example/javadoc/`: 按core/module拆分包结构
 - `src/main/resources/`: application.properties → application.yml(多环境)，新增`static/images/market/`静态资源目录
 - 无向后兼容影响(项目当前仅有一个HelloController，可保留或移除)

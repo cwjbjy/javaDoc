@@ -1,7 +1,7 @@
 # SpringDoc OpenAPI 接口文档指南
 
 > 本指南循序渐进介绍 SpringDoc OpenAPI。从"前后端联调时互相猜接口"到"打开 Swagger UI 就能看到所有接口和模型"，每步只引入一个新概念。
-> 基于本项目 `demo1` 实际代码（MarketController / OrderController），适用版本：Spring Boot 4.x，springdoc-openapi 2.8.x，Java 17+（Jakarta 命名空间）。
+> 基于本项目 `JavaDoc` 实际代码（MarketController / OrderController），适用版本：Spring Boot 4.x，springdoc-openapi 2.8.x，Java 17+（Jakarta 命名空间）。
 
 ---
 
@@ -454,7 +454,7 @@ public CategoryResponse getCategory(
 ```java
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import com.example.demo1.module.market.dto.response.CategoryResponse;
+import com.example.javadoc.module.market.dto.response.CategoryResponse;
 
 @Operation(summary = "添加分类", description = "创建新的菜品分类，需要名称和图标")
 @ApiResponses(value = {
@@ -506,7 +506,7 @@ public String uploadImage(
 
 ### 6.1 问题：Advice 包装了响应，但 SpringDoc 看不见
 
-你的项目通过 [GlobalResponseBodyAdvice](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/core/advice/GlobalResponseBodyAdvice.java) 统一包装了所有成功响应：
+你的项目通过 [GlobalResponseBodyAdvice](file:///d:/javaProject/JavaDoc/src/main/java/com/example/JavaDoc/core/advice/GlobalResponseBodyAdvice.java) 统一包装了所有成功响应：
 
 ```
 Controller 返回 CategoryResponse
@@ -527,7 +527,7 @@ GlobalResponseBodyAdvice.beforeBodyWrite() 拦截
 在 `config` 包下创建（或扩展）`SpringDocConfig`：
 
 ```java
-package com.example.demo1.config;
+package com.example.javadoc.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
@@ -548,7 +548,7 @@ public class SpringDocConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("demo1 菜品订单系统 API")
+                        .title("JavaDoc 菜品订单系统 API")
                         .description("基于 Spring Boot 4.x + MongoDB 的菜品管理和订单系统")
                         .version("1.0.0"));
     }
@@ -606,7 +606,7 @@ public class SpringDocConfig {
 
 ### 6.3 全局注册错误响应
 
-成功响应需要包裹 `{code, message, data}`，而你的 [GlobalExceptionHandler](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/core/advice/GlobalExceptionHandler.java) 在异常时返回的是另一种格式：
+成功响应需要包裹 `{code, message, data}`，而你的 [GlobalExceptionHandler](file:///d:/javaProject/JavaDoc/src/main/java/com/example/JavaDoc/core/advice/GlobalExceptionHandler.java) 在异常时返回的是另一种格式：
 
 ```json
 { "code": 409, "timestamp": "…", "path": "/market/…", "message": "分类已存在" }
@@ -686,7 +686,7 @@ public GlobalOperationCustomizer globalErrorResponseCustomizer() {
 在 `SpringDocConfig` 中定义分组，每个分组对应一个模块：
 
 ```java
-package com.example.demo1.config;
+package com.example.javadoc.config;
 
 import org.springdoc.core.models.GroupedOpenApi;
 import org.springframework.context.annotation.Bean;
@@ -733,11 +733,11 @@ public class SpringDocConfig {
 
 ### 7.3 分组策略建议
 
-| 分组方式       | 适用场景                   | 示例                                                |
-| -------------- | -------------------------- | --------------------------------------------------- |
-| 按模块（推荐） | 多人协作，每人负责不同模块 | `pathsToMatch("/market/**")`                        |
-| 按版本         | 多版本 API 共存            | `pathsToMatch("/api/v1/**")`                        |
-| 按包路径       | 按 Java 包名分组           | `packagesToScan("com.example.demo1.module.market")` |
+| 分组方式       | 适用场景                   | 示例                                                  |
+| -------------- | -------------------------- | ----------------------------------------------------- |
+| 按模块（推荐） | 多人协作，每人负责不同模块 | `pathsToMatch("/market/**")`                          |
+| 按版本         | 多版本 API 共存            | `pathsToMatch("/api/v1/**")`                          |
+| 按包路径       | 按 Java 包名分组           | `packagesToScan("com.example.javadoc.module.market")` |
 
 `GroupedOpenApi` 支持两种匹配方式：`pathsToMatch`（按 URL 路径）和 `packagesToScan`（按 Java 包）。本项目推荐用 `pathsToMatch`——因为它和 `@RequestMapping` 直接对应，更直观。
 
@@ -763,7 +763,7 @@ SpringDoc 提供了 Security 配置，可以在 Swagger UI 页面上添加一个
 ### 8.2 配置 SecurityScheme（预留）
 
 ```java
-package com.example.demo1.config;
+package com.example.javadoc.config;
 
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -788,7 +788,7 @@ public class SpringDocConfig {
 
         return new OpenAPI()
                 .info(new Info()
-                        .title("demo1 菜品订单系统 API")
+                        .title("JavaDoc 菜品订单系统 API")
                         .description("基于 Spring Boot 4.x + MongoDB 的菜品管理和订单系统")
                         .version("1.0.0"))
                 // 注册 SecurityScheme

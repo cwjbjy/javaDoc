@@ -7,6 +7,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
+
 - 完整复刻Nest.js项目的14个API端点，保持完全相同的请求/响应格式
 - 使用Spring Data MongoDB保持同样的文档数据模型(Market嵌入Foods, Order嵌入FoodItems)
 - 统一成功响应`{code: 200, message: 'success', data: ...}`
@@ -16,6 +17,7 @@
 - 文件上传到静态资源目录，删除时清理磁盘文件
 
 **Non-Goals:**
+
 - 不做认证/授权(与Nest.js项目一致)
 - 不做前端页面(纯REST API)
 - 不修改MongoDB数据模型结构
@@ -33,7 +35,7 @@
 ### 2. 包结构: core + module 两层
 
 ```
-com.example.demo1
+com.example.javadoc
 ├── config/              # 配置类(CORS, 静态资源映射)
 ├── core/                # 全局横切关注点
 │   └── advice/          # @RestControllerAdvice
@@ -65,6 +67,7 @@ com.example.demo1
 **选型**: 单一个`GlobalExceptionHandler`类
 
 **理由**: Nest.js有两个过滤器(HttpExceptionFilter + AllExceptionsFilter)，Spring可以用一个`@RestControllerAdvice`类中的多个`@ExceptionHandler`方法实现相同效果：
+
 - `@ExceptionHandler(Exception.class)` → 对应AllExceptionsFilter (500)
 - `@ExceptionHandler(ResponseStatusException.class)` 或具体业务异常 → 对应HttpExceptionFilter
 - 返回格式统一为`{statusCode, timestamp, path, message}`
@@ -80,6 +83,7 @@ com.example.demo1
 **选型**: `MultipartFile`接收上传 + 自定义静态资源映射
 
 **理由**:
+
 - Nest.js用Multer `diskStorage` 存到 `public/images/market/`，Spring用`MultipartFile.transferTo()`即可
 - 文件名策略: `System.currentTimeMillis() + 原扩展名`，与Nest.js一致
 - 静态资源访问: 配置`WebMvcConfigurer.addResourceHandlers`将`/static/**`映射到文件系统路径

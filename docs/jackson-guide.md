@@ -1,6 +1,6 @@
 # Jackson JSON 处理指南
 
-> 本指南基于 `demo1` 项目实际环境，介绍 Jackson JSON 库的概念、常用注解与对象/JSON 互转。
+> 本指南基于 `JavaDoc` 项目实际环境，介绍 Jackson JSON 库的概念、常用注解与对象/JSON 互转。
 > 项目使用 Spring Boot 4.0.6 + Jackson 3.1.2 (LTS)。
 
 ---
@@ -980,7 +980,7 @@ public ObjectMapper objectMapper() {
 
 ### 13.1 唯一的 Jackson 注解：@JsonProperty
 
-项目中唯一使用的 Jackson 注解在 [CreateOrderDTO.java](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/module/order/dto/CreateOrderDTO.java)：
+项目中唯一使用的 Jackson 注解在 [CreateOrderDTO.java](file:///d:/javaProject/JavaDoc/src/main/java/com/example/javadoc/module/order/dto/CreateOrderDTO.java)：
 
 ```java
 public record CreateOrderDTO(
@@ -1025,7 +1025,7 @@ CreateOrderDTO {
 
 ### 13.2 隐式序列化：GlobalResponseBodyAdvice
 
-[GlobalResponseBodyAdvice.java](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/core/advice/GlobalResponseBodyAdvice.java) 将返回值包装为统一格式，Jackson 自动序列化：
+[GlobalResponseBodyAdvice.java](file:///d:/javaProject/JavaDoc/src/main/java/com/example/javadoc/core/advice/GlobalResponseBodyAdvice.java) 将返回值包装为统一格式，Jackson 自动序列化：
 
 ```java
 @Override
@@ -1053,7 +1053,7 @@ Map{code=200, message="success", data=Market{id, name, image, foods}}
 
 ### 13.3 隐式序列化：GlobalExceptionHandler
 
-[GlobalExceptionHandler.java](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/core/advice/GlobalExceptionHandler.java) 返回错误响应，同样由 Jackson 序列化：
+[GlobalExceptionHandler.java](file:///d:/javaProject/JavaDoc/src/main/java/com/example/javadoc/core/advice/GlobalExceptionHandler.java) 返回错误响应，同样由 Jackson 序列化：
 
 ```java
 private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, ...) {
@@ -1082,7 +1082,7 @@ public Object addCategory(@Valid @RequestBody CreateCategoryDTO dto) {
 
 ### 13.5 Map<String, Object> 接收松散 JSON
 
-[MarketController.java](file:///d:/javaProject/demo1/src/main/java/com/example/demo1/module/market/controller/MarketController.java) 中有一个用 Map 接收 JSON 的接口：
+[MarketController.java](file:///d:/javaProject/JavaDoc/src/main/java/com/example/javadoc/module/market/controller/MarketController.java) 中有一个用 Map 接收 JSON 的接口：
 
 ```java
 @PutMapping("/updateFoodWithNum")

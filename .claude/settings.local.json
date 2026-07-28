@@ -5,7 +5,7 @@
       "Bash(openspec status *)",
       "Bash(openspec instructions *)",
       "Bash(./mvnw compile *)",
-      "Bash(cp -r \"D:/uniapp/cookbook_api/public/images/market/\"* \"D:/javaProject/demo1/static/images/market/\")",
+      "Bash(cp -r \"D:/uniapp/cookbook_api/public/images/market/\"* \"D:/javaProject/JavaDoc/static/images/market/\")",
       "Bash(rtk ls *)",
       "Bash(rtk du *)",
       "Bash(mongosh mongodb://127.0.0.1:27017/market --eval \"db.markets.countDocuments\\(\\)\" --quiet)",

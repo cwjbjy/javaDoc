@@ -212,7 +212,7 @@ Knife4j 在 `/doc.html` 页面提供了 **离线文档** 功能，支持四种�
 导出的 Markdown 文档示例：
 
 ````markdown
-# demo1 菜品订单系统 API
+# JavaDoc 菜品订单系统 API
 
 ## 市场管理
 
@@ -300,7 +300,7 @@ Swagger UI 虽然有全局 Authorize 按钮，但 token 不会自动附加到**�
 也可以通过配置类预设全局参数，避免每次打开页面都要手动填写：
 
 ```java
-package com.example.demo1.config;
+package com.example.javadoc.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;

@@ -478,7 +478,7 @@ public class UserService {
 ### 5.4 项目 mapper 包约定
 
 ```
-src/main/java/com/example/demo1/module/
+src/main/java/com/example/javadoc/module/
 ├── user/
 │   ├── dto/
 │   │   └── UserDTO.java
@@ -502,7 +502,7 @@ MapStruct 在编译期为你声明的接口生成实现类。
 
 ```
 target/generated-sources/annotations/
-  └── com/example/demo1/module/user/mapper/
+  └── com/example/javadoc/module/user/mapper/
         └── UserMapperImpl.java       ← 打开看看
 ```
 

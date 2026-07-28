@@ -1,6 +1,6 @@
 # Spring Boot Validation 参数校验指南
 
-> 本指南循序渐进介绍 `spring-boot-starter-validation` 的参数校验能力。从"没有校验时手写 if"到声明式注解校验，再到自定义约束，每步只引入一个新概念。基于本项目 `demo1` 实际代码与约定。
+> 本指南循序渐进介绍 `spring-boot-starter-validation` 的参数校验能力。从"没有校验时手写 if"到声明式注解校验，再到自定义约束，每步只引入一个新概念。基于本项目 `JavaDoc` 实际代码与约定。
 >
 > 适用版本：Spring Boot 4.x，Java 17+（`jakarta.validation.*` 命名空间）
 
@@ -160,7 +160,7 @@ public class ValidationDemo {
 项目中所有 DTO 使用 `record` 定义，校验注解挂在构造器参数上：
 
 ```java
-// src/main/java/com/example/demo1/module/market/dto/CreateCategoryDTO.java
+// src/main/java/com/example/javadoc/module/market/dto/CreateCategoryDTO.java
 public record CreateCategoryDTO(
         @NotBlank(message = "缺少名称") String name,
         @NotBlank(message = "缺少图标") String image) {
@@ -298,7 +298,7 @@ public record OrderDTO(
 **第一步：定义注解**
 
 ```java
-package com.example.demo1.core.validation;
+package com.example.javadoc.core.validation;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.Payload;
@@ -322,7 +322,7 @@ public @interface ValidFoodName {
 **第二步：实现校验器**
 
 ```java
-package com.example.demo1.core.validation;
+package com.example.javadoc.core.validation;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
@@ -372,7 +372,7 @@ public record AddFoodDTO(
 ### 6.2 Controller 校验异常处理（项目已实现）
 
 ```java
-// src/main/java/com/example/demo1/core/advice/GlobalExceptionHandler.java
+// src/main/java/com/example/javadoc/core/advice/GlobalExceptionHandler.java
 @ExceptionHandler(MethodArgumentNotValidException.class)
 public ResponseEntity<Map<String, Object>> handleValidation(
         MethodArgumentNotValidException ex, HttpServletRequest request) {
@@ -478,12 +478,12 @@ public ResponseEntity<Map<String, Object>> handleValidation(
 
 ### 7.4 陷阱速查
 
-| 陷阱                                    | 后果                                          | 正确做法                         |
-| --------------------------------------- | --------------------------------------------- | -------------------------------- |
-| 忘写 `@Valid`                           | DTO 上的注解全部不生效                        | Controller 参数前必须加 `@Valid` |
-| 嵌套对象不加 `@Valid`                   | 子对象字段忽略校验                            | 嵌套集合/对象前加 `@Valid`       |
-| `@NotBlank` 用于 Integer                | 编译错误（注解只允许 CharSequence）           | Integer 用 `@NotNull`            |
-| `@NotNull` 用于 String 但需要非空       | 空字符串 `""` 能通过                          | String 用 `@NotBlank`            |
+| 陷阱                              | 后果                                | 正确做法                         |
+| --------------------------------- | ----------------------------------- | -------------------------------- |
+| 忘写 `@Valid`                     | DTO 上的注解全部不生效              | Controller 参数前必须加 `@Valid` |
+| 嵌套对象不加 `@Valid`             | 子对象字段忽略校验                  | 嵌套集合/对象前加 `@Valid`       |
+| `@NotBlank` 用于 Integer          | 编译错误（注解只允许 CharSequence） | Integer 用 `@NotNull`            |
+| `@NotNull` 用于 String 但需要非空 | 空字符串 `""` 能通过                | String 用 `@NotBlank`            |
 
 ---
 

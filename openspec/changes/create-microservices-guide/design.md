@@ -2,7 +2,7 @@
 
 受众是已掌握 Spring Boot 单体开发全部知识的前端开发者（已阅读并掌握 `docs/` 中 17 篇指南）。现有指南覆盖了 Spring IoC/DI、MVC、Security、MongoDB、Validation、MapStruct、Jackson、异常处理、事务、事件、Filter/Interceptor 等「单体内部」技术栈。本指南是第一篇跨入「分布式」领域的文档，需要建立从单体到微服务的认知迁移。
 
-项目现有技术栈：Spring Boot 4.0.6、Java 17、Maven、Lombok、MapStruct 1.5.5。现有 demo1 是 MongoDB 单体应用。但本指南独立于 demo1，使用 MySQL 以贴合主流电商场景。
+项目现有技术栈：Spring Boot 4.0.6、Java 17、Maven、Lombok、MapStruct 1.5.5。现有 JavaDoc 是 MongoDB 单体应用。但本指南独立于 JavaDoc，使用 MySQL 以贴合主流电商场景。
 
 ## Goals / Non-Goals
 
@@ -20,7 +20,7 @@
 - 不涉及 Kubernetes（聚焦 Spring Cloud 层面）
 - 不深入 Docker 原理（仅提供可用的 compose 文件）
 - 不覆盖消息驱动（RocketMQ 仅延伸阅读）
-- 不涉及 demo1 现有代码改造
+- 不涉及 JavaDoc 现有代码改造
 - 不实现任何可运行的微服务代码（纯知识文档）
 
 ## Decisions
@@ -171,4 +171,4 @@ services:
 ## Open Questions
 
 - 第 9 章「安全」的深度：是简要说明网关统一认证方案，还是深入 JWT 透传 + Spring Security 微服务配置？建议中等深度——说明方案选型和关键配置，详细实现引用现有 Security 指南。
-- JSON 响应格式：是否沿用 demo1 的 `{code, message, data}` 统一包装？建议在指南中使用此格式以保持一致性，这也是企业级 API 的推荐做法。
+- JSON 响应格式：是否沿用 JavaDoc 的 `{code, message, data}` 统一包装？建议在指南中使用此格式以保持一致性，这也是企业级 API 的推荐做法。
