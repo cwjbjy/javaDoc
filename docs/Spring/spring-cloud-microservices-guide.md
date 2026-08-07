@@ -2,7 +2,7 @@
 
 > 本指南系统介绍 Spring Cloud 微服务完整知识体系。先建立分布式认知（为什么需要微服务、全景架构），再逐类深入服务发现、远程调用、网关、配置中心、熔断降级、链路追踪、分布式事务、安全。每章一个问题驱动，同一「电商三服务」场景贯穿全文。
 >
-> 适用版本：Spring Boot 4.0.x / Spring Cloud 2025.1.x (Oakwood) / Spring Cloud Alibaba 2025.1.0.0，Java 17+
+> 当前项目基线：Spring Boot 3.5.14 / Spring Cloud 2025.0.0 / Spring Cloud Alibaba 2025.0.0.0 / Nacos Client 3.0.3 / Java 17。后续新增组件时必须先验证它们与这组依赖的兼容性。
 >
 > 面向读者：已掌握 Spring Boot 单体开发（IoC/DI、MVC、Security、数据访问、异常处理），准备学习微服务的开发者。如果你是前端出身，指南中嵌入了前端类比帮你快速建立直觉。
 
@@ -10,191 +10,34 @@
 
 ## 目录
 
-0. [前置概念：为什么需要微服务](#0-前置概念为什么需要微服务)
-   - [0.1 你现在的位置：单体舒适区](#01-你现在的位置单体舒适区)
-   - [0.2 单体什么时候开始痛](#02-单体什么时候开始痛)
-   - [0.3 微服务的承诺与代价](#03-微服务的承诺与代价)
-   - [0.4 分布式系统八大谬误](#04-分布式系统八大谬误)
-   - [0.5 前端视角的概念映射](#05-前端视角的概念映射)
 1. [全景图：Spring Cloud 微服务完整架构](#1-全景图spring-cloud-微服务完整架构)
-   - [1.1 一张图看懂所有组件](#11-一张图看懂所有组件)
-   - [1.2 版本兼容矩阵](#12-版本兼容矩阵)
+   - [1.1 一张图看懂所有组件](#10-一张图看懂所有组件)
+   - [1.2 版本兼容矩阵](#11-版本兼容矩阵)
    - [1.3 贯穿场景：电商三服务](#13-贯穿场景电商三服务)
    - [1.4 Docker Compose 一键部署](#14-docker-compose-一键部署)
-2. [服务注册与发现 — Nacos](#2-服务注册与发现--nacos)
-   - [2.0 问题：服务怎么找到彼此](#20-问题服务怎么找到彼此)
-   - [2.1 Nacos 是什么](#21-nacos-是什么)
-   - [2.2 启动 Nacos Server](#22-启动-nacos-server)
-   - [2.3 服务注册：让服务"报到"](#23-服务注册让服务报到)
-   - [2.4 服务发现：用服务名替代 IP](#24-服务发现用服务名替代-ip)
-   - [2.5 服务发现的完整请求链路](#25-服务发现的完整请求链路)
-   - [2.6 本节回顾](#26-本节回顾)
+   - [1.5 数据库迁移：Flyway](#15-数据库迁移flyway)
+2. [Nacos：服务注册、发现与统一配置](#2-nacos服务注册发现与统一配置)
+   - [2.1 本项目完整启动链路](#21-本项目完整启动链路)
+   - [2.2 启动与配置导入](#22-启动与配置导入)
+   - [2.3 每个应用的最小本地配置](#23-每个应用的最小本地配置)
+   - [2.4 Nacos 中的服务配置](#24-nacos-中的服务配置)
+   - [2.5 依赖范围](#25-依赖范围)
+   - [2.6 客户端负载均衡 — Spring Cloud LoadBalancer](#26-客户端负载均衡--spring-cloud-loadbalancer)
+   - [2.7 注册与发现](#27-注册与发现)
+   - [2.8 本章回顾](#28-本章回顾)
 3. [远程服务调用 — OpenFeign](#3-远程服务调用--openfeign)
 4. [API 网关 — Spring Cloud Gateway](#4-api-网关--spring-cloud-gateway)
-5. [统一配置管理 — Nacos Config](#5-统一配置管理--nacos-config)
-6. [服务容错 — Sentinel](#6-服务容错--sentinel)
-7. [分布式链路追踪 — Micrometer Tracing + Zipkin](#7-分布式链路追踪--micrometer-tracing--zipkin)
-8. [分布式事务 — Seata](#8-分布式事务--seata)
-9. [安全 — 微服务中的认证授权](#9-安全--微服务中的认证授权)
-10. [延伸阅读：消息驱动](#10-延伸阅读消息驱动)
-11. [实战决策](#11-实战决策)
-12. [速查清单](#12-速查清单)
-
----
-
-## 0. 前置概念：为什么需要微服务
-
-微服务不是银弹。它解决了一些问题，也创造了一些新问题。理解「为什么」比理解「怎么做」更重要——否则你会为一个只需要单体的小项目引入不必要的复杂度。
-
-### 0.1 你现在的位置：单体舒适区
-
-如果你已掌握 Spring Boot 的单体开发（IoC/DI、MVC、Security、数据访问、事务、异常处理），你现在的项目结构大概是这样的：
-
-```
-┌─────────────────────────────────────────────┐
-│              一个 JVM 进程                    │
-│                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ 用户模块  │  │ 商品模块  │  │ 订单模块  │  │
-│  │Controller│  │Controller│  │Controller│  │
-│  │ Service  │  │ Service  │  │ Service  │  │
-│  │   ↓      │  │   ↓      │  │   ↓      │  │
-│  │  Mapper  │  │  Mapper  │  │  Mapper  │  │
-│  └──────────┘  └──────────┘  └──────────┘  │
-│                    │                        │
-│            ┌───────┴───────┐                │
-│            │  同一个数据库   │                │
-│            └───────────────┘                │
-└─────────────────────────────────────────────┘
-
-特点：
-✅ 开发简单：一个 IDE 窗口搞定全部代码
-✅ 调试方便：断点一路跟到底，调用栈完整
-✅ 事务简单：@Transactional 一个注解，跨表操作原子执行
-✅ 部署简单：一个 jar 包丢上服务器就跑
-✅ 测试简单：启动一个 Spring 上下文，所有依赖都在
-```
-
-你现在正在舒适区。本章的目的不是让你立刻逃离舒适区，而是在心里埋一颗种子：**什么时候这个舒适区会变成瓶颈？**
-
-### 0.2 单体什么时候开始痛
-
-单体不是"不好"，单体是"会随着规模增长变得不好"。下面这张图展示了从"刚刚好"到"积重难返"的过程：
-
-```
-团队规模：  1 人          5 人              20 人              50 人
-           │            │                 │                  │
-单体体验    极佳         顺畅              开始摩擦            痛苦
-           ✓            ✓                 ✗                  ✗
-
-痛点出现的顺序（从先到后）：
-
-① 代码冲突（5 人+）
-   10 个人在同一个 Git 仓库改代码，每次合并都像拆雷。
-   用户模块改了公共工具类 → 订单模块挂了，因为没人通知。
-
-② 部署耦合（10 人+）
-   订单模块改了一行文案，必须重新部署整个应用。
-   部署 = 全部模块一起重启 = 5 分钟停机 = 所有人等着。
-
-③ 数据库瓶颈（业务量增长）
-   所有模块共享一个数据库。订单表的慢查询拖慢了用户登录。
-   连接池被某个批量任务占满，其他模块拿不到连接。
-
-④ 技术栈锁定
-   商品模块想用 Elasticsearch 做全文搜索，但项目是 JPA + MySQL。
-   "要么全换，要么不换"—— 结果就是技术债越积越多。
-
-⑤ 认知负荷爆炸（代码量 10 万行+）
-   新人 onboarding 需要 3 周才能跑通本地环境。
-   没人敢动"那个老模块"——原来的作者已经离职了。
-```
-
-> **关键洞察**：单体的问题不是「单体不好」，而是「当系统复杂到一定程度后，单体架构的边际成本急剧上升」。如果你的系统永远只有 2~3 个模块、3~5 个开发者，单体完全够用。
-
-### 0.3 微服务的承诺与代价
-
-微服务把单体拆成多个独立的服务，每个服务有自己的进程、自己的数据库、自己的团队。它带来了解耦，也带来了分布式系统的一切复杂性。
-
-```
-                    单体架构                          微服务架构
-                    ────────                          ────────
-
-部署单元             1 个 jar                          N 个 jar
-数据库               1 个共享库                        每个服务独立库
-模块通信             方法调用（本地，瞬时）              网络调用（远程，不可靠）
-事务                 本地事务（ACID）                   分布式事务（最终一致性）
-配置                 一个 application.yml               N 个 application.yml
-                                     +
-                              配置中心统一管理
-调试                 一条调用栈走到底                    请求跨多个服务，需要链路追踪
-部署                 一次重启全部                        只重启变更的服务
-扩容                 整个应用一起扩                      只扩瓶颈服务
-```
-
-**微服务承诺的收益**：
-
-- 独立部署：改订单模块只需要部署订单服务
-- 技术异构：搜索服务用 Elasticsearch，推荐服务用 Python——每个服务选最合适的栈
-- 团队自治：每个团队独立开发、测试、部署自己的服务
-- 故障隔离：商品服务挂了，用户登录不受影响
-
-**微服务带来的代价**：
-
-- 网络不可靠：方法调用变成了 HTTP 调用，引入了延迟、超时、重试
-- 数据一致性难：跨服务的事务不再是 `@Transactional` 一句话的事
-- 运维复杂度暴增：N 个服务 = N 套监控、N 套日志、N 套部署流水线
-- 调试困难：一个请求跨 5 个服务，到底慢在哪一层？
-- 分布式系统本身的复杂性：服务发现、负载均衡、配置管理、熔断降级——这些都是单体中不存在的概念
-
-> **一句话总结**：微服务用「运维复杂度」换取「开发灵活性」。在团队小、业务简单时这是亏本买卖；在系统复杂到单体的边际成本高过微服务的运维成本时，才开始划算。
-
-### 0.4 分布式系统八大谬误
-
-1994 年，Sun 公司的工程师总结了分布式计算的 8 个常见错误假设。近 30 年后的今天，它们仍然是每个微服务开发者的必备常识：
-
-| #   | 谬误           | 真相                                          |
-| --- | -------------- | --------------------------------------------- |
-| 1   | 网络是可靠的   | 网络随时会断、会丢包、会超时                  |
-| 2   | 延迟为零       | 本地方法调用 1ns，网络调用 1ms——差了 100 万倍 |
-| 3   | 带宽是无限的   | 大对象跨服务传输，序列化开销、网络开销都不小  |
-| 4   | 网络是安全的   | 内网也有被攻破的可能，服务间通信需要认证      |
-| 5   | 拓扑不会变     | 服务实例随时上线、下线、扩缩容                |
-| 6   | 只有一个管理员 | 微服务意味着多团队、多管理员                  |
-| 7   | 传输成本为零   | 序列化/反序列化消耗 CPU，JSON 比二进制大很多  |
-| 8   | 网络是同构的   | 不同服务的语言、框架、协议可能不同            |
-
-整个 Spring Cloud 生态，本质上就是在与这八大谬误对抗：
-
-```
-八大谬误                      Spring Cloud 的回应
-────────                     ──────────────────
-① 网络不可靠       →         Sentinel（熔断、重试、降级）
-② 延迟不为零       →         Micrometer Tracing（找到瓶颈）
-⑤ 拓扑会变         →         Nacos（服务注册与发现）
-⑥ 多管理员         →         Nacos Config（统一配置管理）
-④ 网络不安全       →         Spring Security + Gateway（统一认证）
-```
-
-### 0.5 前端视角的概念映射
-
-如果你是前端开发者，以下映射帮你用熟悉的概念理解微服务：
-
-| 微服务概念                   | 前端类比                                        | 相似之处                                                                                                     |
-| ---------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **服务注册发现**（Nacos）    | DNS 解析 + npm 包注册表                         | 你用 `import lodash from 'lodash'` 而不是 `import from '1.2.3.4'`，Nacos 让服务间用服务名而非 IP 通信        |
-| **声明式调用**（OpenFeign）  | TypeScript 的 API 类型定义 + axios              | 你定义 `interface UserApi { getUser(id: string): Promise<User> }`，Feign 就是后端的"接口定义即调用"          |
-| **API 网关**（Gateway）      | Nginx 反向代理 / BFF 层                         | 前端调用 `GET /api/orders/42` → Gateway 转发到 order-service。前端不需要知道 order-service 的地址            |
-| **配置中心**（Nacos Config） | `.env` 文件 → Vercel/Netlify 环境变量面板       | 你在 Vercel 后台改一个环境变量，所有部署实例自动生效。Nacos Config 做同样的事                                |
-| **熔断降级**（Sentinel）     | React `<ErrorBoundary>` + `<Suspense fallback>` | 组件报错 → 显示 fallback UI。服务调用失败 → 返回降级数据，不拖垮调用方                                       |
-| **链路追踪**（Zipkin）       | Chrome DevTools Network 面板                    | 你看到 `GET /api/orders` 花了 2.3s，点开发现 `GET /api/products` 占了 2.1s。Zipkin 就是跨服务的 Network 面板 |
-| **分布式事务**（Seata）      | 前端很少类比                                    | 这是后端独有的复杂度，§8 会从头讲起                                                                          |
+5. [服务容错 — Sentinel](#5-服务容错--sentinel)
+6. [分布式链路追踪 — Micrometer Tracing + Zipkin](#6-分布式链路追踪--micrometer-tracing--zipkin)
+7. [分布式事务 — Seata](#7-分布式事务--seata)
+8. [安全 — 微服务中的认证授权](#8-安全--微服务中的认证授权)
+9. [延伸阅读：消息驱动](#9-延伸阅读消息驱动)
+10. [实战决策](#10-实战决策)
+11. [速查清单](#11-速查清单)
 
 ---
 
 ## 1. 全景图：Spring Cloud 微服务完整架构
-
-§0 建立了"为什么需要微服务"的认知。本节展示微服务的完整拼图——每个组件在什么位置、解决什么问题、它们如何协作。这张图就是本文的导航地图。
 
 ### 1.1 一张图看懂所有组件
 
@@ -217,8 +60,6 @@
               │                │                │
      ┌────────▼───┐   ┌───────▼──────┐  ┌──────▼──────┐
      │user-service│   │product-service│  │order-service│
-     │  :8081     │   │    :8082      │  │   :8083     │
-     │            │   │               │  │             │
      │ MySQL      │   │  MySQL        │  │  MySQL      │
      │ (users)    │   │  (products)   │  │  (orders)   │
      └─────┬──────┘   └───────┬───────┘  └──────┬──────┘
@@ -234,16 +75,12 @@
         │                     │                     │
   ┌─────▼─────┐  ┌───────────▼──┐  ┌──────────────▼──┐
   │   Nacos   │  │   Sentinel   │  │     Zipkin      │
-  │  :8848    │  │    :8080     │  │     :9411       │
-  │           │  │              │  │                  │
   │ 服务注册  │  │ 流量控制     │  │ 链路追踪可视化   │
   │ 配置中心  │  │ 熔断降级     │  │                  │
   └───────────┘  └──────────────┘  └──────────────────┘
         │
   ┌─────▼─────┐
   │   Seata   │
-  │  :8091    │
-  │           │
   │ 分布式事务 │
   │ 协调器    │
   └───────────┘
@@ -262,60 +99,45 @@
 
 ### 1.2 版本兼容矩阵
 
-Spring Cloud 是版本敏感型生态。Spring Boot、Spring Cloud、Spring Cloud Alibaba 三者的版本必须严格匹配。以下是本指南使用的版本（已通过官方文档验证）：
+Spring Cloud 是版本敏感型生态。Spring Boot、Spring Cloud、Spring Cloud Alibaba 三者必须使用同一兼容组合。以下是当前 `microservice-demo` 已通过 Maven 构建验证的基线：
 
 ```
-Spring Boot          4.0.x           ← 本指南的基座
+Spring Boot          3.5.14          ← 当前项目基座
     │
-    └── Spring Cloud  2025.1.x        ← Oakwood 发布列车，Boot 4.0 的唯一对应版本
+    └── Spring Cloud  2025.0.0        ← 当前项目导入的 BOM
            │
-           └── Spring Cloud Alibaba  2025.1.0.0  ← 唯一适配 Boot 4.0 的 SCA 版本
-                  │
-                  ├── Nacos Client   3.1.1
-                  ├── Sentinel       1.8.9
-                  └── Seata          2.5.0
+           └── Spring Cloud Alibaba  2025.0.0.0  ← 当前项目导入的 BOM
+                   │
+                   ├── Nacos Client   3.0.3
+                   ├── Sentinel       1.8.9
+                   └── Seata          2.5.0
 ```
 
-**完整依赖坐标**（可直接复制到 pom.xml）：
+**为什么选 Spring Cloud Alibaba？国内 vs 国际技术选型对比**：
 
-```xml
-<!-- Spring Boot 父 POM -->
-<parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.0.6</version>
-</parent>
+```
+                    国际主流                                国内主流
+                    ─────────                              ─────────
 
-<!-- Spring Cloud BOM（统一管理 Spring Cloud 组件版本） -->
-<dependencyManagement>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-dependencies</artifactId>
-            <version>2025.1.2</version>
-            <type>pom</type>
-            <scope>import</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba.cloud</groupId>
-            <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-            <version>2025.1.0.0</version>
-            <type>pom</type>
-            <scope>import</scope>
-        </dependency>
-    </dependencies>
-</dependencyManagement>
+注册中心             Eureka (已凉) / Consul                 Nacos ★
+远程调用             OpenFeign（声明式 HTTP）                OpenFeign / Dubbo
+网关                 Spring Cloud Gateway                   Spring Cloud Gateway
+配置中心             Spring Cloud Config / Consul           Nacos ★
+熔断降级             Resilience4j                          Sentinel ★
+链路追踪             Micrometer Tracing + Zipkin            Micrometer Tracing + Zipkin
+消息驱动             RabbitMQ / Kafka                       RocketMQ ★（阿里系）
+分布式事务           自研 / Saga 模式                       Seata（AT 模式） ★
 ```
 
-> **BOM 的作用**：在 `<dependencyManagement>` 中导入 BOM 后，下方 `<dependencies>` 中添加具体 starter 时**无需写版本号**——BOM 已为你锁定了所有子依赖的兼容版本。
+> 标 ★ 的是 Spring Cloud Alibaba 组件。2019 年 Netflix 宣布技术栈进入维护模式后，国内企业大规模从 Eureka + Hystrix 迁移到 Nacos + Sentinel——阿里系组件在双十一级别场景下久经考验，中文社区活跃，且提供注册 + 配置 + 熔断 + 事务的一站式方案，无需拼凑多个项目。本指南因此选择 Spring Cloud Alibaba 作为核心依赖。
 
 ### 1.3 贯穿场景：电商三服务
 
 全文所有代码示例围绕同一个电商场景展开。三个服务、三个数据库、一条核心调用链：
 
 ```
-用户下单的请求链路
-─────────────────
+用户下单的请求链路（Seata 分布式事务）
+─────────────────────────────────────
 
 前端 POST /api/orders（userId=1, productId=42, quantity=2）
     │
@@ -323,15 +145,18 @@ Spring Boot          4.0.x           ← 本指南的基座
 Gateway (:8080)
     │ Path=/api/orders/** → 路由到 order-service
     ▼
-order-service (:8083)
+order-service (:8083)                      ← @GlobalTransactional
     │
     ├──→ Feign 调用 product-service (:8082)
-    │    查询商品信息、扣减库存
+    │    查询商品信息、扣减库存            ← 分支事务①
     │
     ├──→ Feign 调用 user-service (:8081)
-    │    查询用户信息、扣减余额
+    │    查询用户信息、扣减余额            ← 分支事务②
     │
-    └──→ 写入 orders 表（MySQL order-db）
+    └──→ 写入 orders 表（MySQL order-db） ← 分支事务③
+    │
+    ▼
+Seata TC 协调：全部成功 → 提交，任一失败 → 全部回滚
 ```
 
 这条链路天然覆盖本指南的所有核心概念：
@@ -352,16 +177,47 @@ version: "3.8"
 services:
   # ========== 服务注册 + 配置中心 ==========
   nacos:
-    image: nacos/nacos-server:v3.1.1
+    # 当前学习项目使用 Nacos 3.0.3；服务端与客户端均由同一 3.x 大版本演进。
+    image: nacos/nacos-server:v3.0.3
     container_name: nacos
     environment:
-      - MODE=standalone
-      - PREFER_HOST_MODE=hostname
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      # Nacos 3.x 启动脚本要求以下三项非空，即使本地关闭认证也一样。
+      # NACOS_AUTH_TOKEN 这里为了演示提供一个固定值
+      NACOS_AUTH_TOKEN: bG9jYWwtbGVhcm5pbmctbmFjb3MtdG9rZW4tMjAyNi0wOC0wNQ==
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: local-learning
     ports:
       - "8848:8848"
-      - "9848:9848" # gRPC 端口（Nacos 3.x 新增）
+      - "9848:9848" # gRPC 端口（Nacos 2.x 引入，3.x 沿用）
+      # 容器内控制台仍为 8080；映射到宿主机 8084，避免与 Gateway :8080 冲突。
+      - "8084:8080"
+    healthcheck:
+      # test是固定配置
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:8848/nacos/v1/ns/operator/metrics >/dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
     volumes:
       - nacos-data:/home/nacos/data
+
+  # 当前项目将 Nacos 配置以 YAML 保存在仓库中，并在 Nacos 健康后自动导入。
+  nacos-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      nacos:
+        # 表示 nacos-init 必须等到 Nacos 的健康检查通过后才启动
+        condition: service_healthy
+    volumes:
+      - ./infra/nacos:/configs:ro
+      # 容器启动后，/bin/sh 执行 /configs/import.sh
+    entrypoint: ["/bin/sh", "/configs/import.sh"]
+    restart: "no"
 
   # ========== 数据库（三个服务各一个库） ==========
   mysql-user:
@@ -372,6 +228,9 @@ services:
       MYSQL_DATABASE: user_db
     ports:
       - "3307:3306"
+    volumes:
+      # 命名卷由 Docker 管理；容器重建后仍保留 user_db 数据。
+      - mysql-user-data:/var/lib/mysql
 
   mysql-product:
     image: mysql:8.0
@@ -381,6 +240,9 @@ services:
       MYSQL_DATABASE: product_db
     ports:
       - "3308:3306"
+    volumes:
+      # 容器内 MySQL 的默认数据目录。
+      - mysql-product-data:/var/lib/mysql
 
   mysql-order:
     image: mysql:8.0
@@ -390,322 +252,259 @@ services:
       MYSQL_DATABASE: order_db
     ports:
       - "3309:3306"
-
-  # ========== 流量控制控制台 ==========
-  sentinel:
-    image: bladex/sentinel-dashboard:1.8.9
-    container_name: sentinel
-    ports:
-      - "8090:8080"
-
-  # ========== 链路追踪可视化 ==========
-  zipkin:
-    image: openzipkin/zipkin:latest
-    container_name: zipkin
-    ports:
-      - "9411:9411"
-
-  # ========== 分布式事务协调器 ==========
-  seata:
-    image: seataio/seata-server:2.5.0
-    container_name: seata
-    ports:
-      - "8091:8091"
-      - "7091:7091"
-    environment:
-      - SEATA_PORT=8091
-      - STORE_MODE=db
-      - SEATA_STORE_DB_URL=jdbc:mysql://mysql-order:3306/seata?useSSL=false
-      - SEATA_STORE_DB_USER=root
-      - SEATA_STORE_DB_PASSWORD=root123
+    volumes:
+      - mysql-order-data:/var/lib/mysql
 
 volumes:
   nacos-data:
+  mysql-user-data:
+  mysql-product-data:
+  mysql-order-data:
 ```
 
-> **启动顺序**：先 `docker-compose up -d mysql-user mysql-product mysql-order` 等 MySQL 就绪，再 `docker-compose up -d` 启动其余服务。MySQL 首次启动需要约 30 秒初始化。
+> **启动顺序**：使用当前 Compose 时直接执行 `docker compose up -d`。`nacos-init` 通过健康检查等待 Nacos 后再导入配置；它完成后显示 `Exited (0)` 是正常状态。
+>
+> **首期范围**：当前 Compose 只启动 Nacos、三个 MySQL 和 `nacos-init`。Sentinel、Zipkin、Seata 是本指南后续章节的学习主题，暂未接入当前项目；需要学习对应章节时，再按该章节的兼容版本和独立 Compose 配置添加。
 
 ---
 
-## 2. 服务注册与发现 — Nacos
+### 1.5 数据库迁移：Flyway
 
-### 2.0 问题：服务怎么找到彼此
+Docker Compose 只负责创建空的 `user_db`、`product_db`、`order_db`；表结构不应依赖手工执行 SQL。当前项目的每个业务服务使用 Flyway，在首次连接自己的数据库时执行迁移脚本。
 
-在单体中，模块之间通过方法调用通信——Spring 帮你注入依赖，方法调用在同一个 JVM 内瞬间完成。但在微服务中，`OrderService` 和 `ProductService` 运行在不同的 JVM 进程里，通过 HTTP 通信。
-
-第一个问题就来了：**Order Service 怎么知道 Product Service 的地址？**
-
-```
-❌ 最原始的做法：把地址写死在配置里
-
-order-service 的 application.yml：
-─────────────────────────────────
-product:
-  url: http://192.168.1.100:8082
-
-问题：
-• Product Service 扩容到 3 个实例（192.168.1.100 ~ 102），改配置
-• Product Service 某个实例挂了，调用方不知道，继续往挂了发请求
-• Product Service 迁移到新机器，所有调用方都要改配置
-• 50 个服务互相调用 → 每个服务都要维护一张"地址簿"
+```text
+服务读取 Nacos 数据源配置
+  → 创建 DataSource
+  → Flyway 扫描 classpath:db/migration
+  → 执行尚未记录的迁移脚本
+  → 写入 flyway_schema_history
+  → 应用完成初始化并注册到 Nacos
 ```
 
-这个问题的本质是：**在动态变化的分布式环境中，调用方如何发现被调用方的地址？** Nacos 的答案是：让服务自己"报到"到一个中心，调用方从中心查询。
+`classpath:db/migration` 是 Flyway 的默认约定目录。因此 order-service 中的实际文件：
 
-### 2.1 Nacos 是什么
-
-Nacos（Naming and Configuration Service）是阿里巴巴开源的服务注册中心和配置中心。在本指南中它扮演两个角色：
-
-```
-┌──────────────────────────────────────┐
-│              Nacos Server            │
-│                                      │
-│  ┌────────────────────────────────┐  │
-│  │  服务注册中心（Naming Service） │  │
-│  │                                │  │
-│  │  维护在线服务列表：              │  │
-│  │  user-service  → 172.17.0.3:8081│  │
-│  │  product-service → 172.17.0.4:8082│ │
-│  │  order-service → 172.17.0.5:8083│  │
-│  │                                │  │
-│  │  心跳检测：每 5 秒收一次心跳，   │  │
-│  │  15 秒没收到 → 标记不健康       │  │
-│  │  30 秒没收到 → 剔除             │  │
-│  └────────────────────────────────┘  │
-│                                      │
-│  ┌────────────────────────────────┐  │
-│  │  配置中心（Config Service）     │  │
-│  │  → §5 详解                     │  │
-│  └────────────────────────────────┘  │
-└──────────────────────────────────────┘
+```text
+order-service/src/main/resources/db/migration/V1__create_orders.sql
 ```
 
-> **前端类比**：Nacos 的服务注册中心就像 DNS 服务器。你在浏览器输入 `github.com`，DNS 告诉你 IP 是 `140.82.112.3`。在微服务里，Feign 调用 `product-service`，Nacos 告诉你这个服务当前有哪些 IP。
+会被打包进应用 classpath，并在 `order_db` 中只执行一次。文件名格式为 `V<版本号>__<说明>.sql`，版本号后的两个下划线不可省略。
 
-### 2.2 启动 Nacos Server
+order-service 的 Nacos 配置位于 `infra/nacos/order-service.yaml`：
 
-使用 §1.4 的 Docker Compose，或单独启动：
-
-```bash
-docker run -d --name nacos \
-  -e MODE=standalone \
-  -p 8848:8848 \
-  -p 9848:9848 \
-  nacos/nacos-server:v3.1.1
+```yaml
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3309/order_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root123
+  flyway:
+    enabled: true
 ```
 
-启动后访问 `http://localhost:8848/nacos`，默认用户名密码均为 `nacos`：
+对应的首个迁移脚本：
 
-```
-Nacos 控制台首页
-────────────────
-┌───────────────────────────────────┐
-│  服务管理                         │
-│  ├── 服务列表  (查看所有注册服务)  │
-│  └── 订阅者列表                    │
-│                                   │
-│  配置管理                         │
-│  ├── 配置列表  (管理配置文件)     │
-│  └── 历史版本                     │
-│                                   │
-│  权限控制                         │
-│  └── 用户管理                     │
-└───────────────────────────────────┘
+```sql
+-- order-service/src/main/resources/db/migration/V1__create_orders.sql
+create table orders (
+    id bigint auto_increment primary key,
+    user_id bigint not null,
+    product_id bigint not null,
+    product_name varchar(120) not null,
+    unit_price decimal(12,2) not null,
+    quantity int not null,
+    created_at timestamp not null default current_timestamp
+);
 ```
 
-### 2.3 服务注册：让服务"报到"
-
-以 `product-service` 为例，三步完成服务注册。
-
-**第一步：添加依赖**（pom.xml）
+业务服务的 `pom.xml` 还需要：
 
 ```xml
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-core</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-mysql</artifactId>
+</dependency>
+```
+
+后续变更应新增例如 `V2__add_order_status.sql`，不要修改已经在任何环境执行过的 `V1__create_orders.sql`。Flyway 用 `flyway_schema_history` 记录和校验版本；开发环境若要从零开始，应明确删除对应数据库卷后再启动。
+
+---
+
+## 2. Nacos：配置加载、服务注册与发现
+
+Nacos 在本项目中有两个职责：**配置中心**保存端口、数据源、Gateway 路由等运行配置；**注册中心**保存已启动实例，供 Gateway 和 OpenFeign 按服务名调用。
+
+nacos-init 只把 infra/nacos/\*.yaml 导入配置中心；应用启动后，Nacos Discovery 才注册服务实例。
+
+### 2.1 本项目完整启动链路
+
+```text
+docker compose up -d
+  └── nacos-init 导入 infra/nacos/*.yaml
+
+启动 product-service
+  ├── 本地 application.yml：应用名、Nacos 地址、config import
+  ├── Nacos product-service.yaml：server.port=8082、数据源
+  ├── 应用监听 :8082
+  └── Discovery 注册 product-service:8082
+```
+
+### 2.2 启动与配置导入
+
+执行 docker compose up -d。Nacos 主地址为 localhost:8848，控制台为 http://localhost:8084/。nacos-init 显示 Exited (0) 表示导入成功；它不会启动或注册 Java 应用。
+
+### 2.3 每个应用的最小本地配置
+
+四个模块的 src/main/resources/application.yml 只保留连接 Nacos 所需配置：
+
+```yaml
+spring:
+  application: { name: product-service }
+  config: { import: "optional:nacos:${spring.application.name}.yaml" }
+  cloud:
+    nacos:
+      discovery: { server-addr: "${NACOS_SERVER_ADDR:localhost:8848}" }
+      config:
+        {
+          server-addr: "${NACOS_SERVER_ADDR:localhost:8848}",
+          file-extension: yaml,
+        }
+```
+
+### 2.4 Nacos 中的服务配置
+
+infra/nacos/product-service.yaml 由 nacos-init 导入：
+
+```yaml
+server: { port: 8082 }
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3308/product_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: root123
+```
+
+gateway-service.yaml、user-service.yaml、product-service.yaml、order-service.yaml 分别保存 8080 至 8083 的端口，以及各自数据源或网关路由。本地文件负责**连接配置中心**，Nacos YAML 负责**集中运行配置**；
+
+### 2.5 依赖范围
+
+**父 POM（版本统一管理）**：根 pom.xml 通过 BOM 锁定所有 Spring Cloud 组件版本，子模块不需要写 `<version>`：
+
+```xml
+<!-- 根 pom.xml -->
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-dependencies</artifactId>
+            <version>2025.0.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+            <version>2025.0.0.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+**各服务通用依赖**（所有子模块都需要这两个）：
+
+```xml
+<!-- Nacos 服务注册与发现 -->
 <dependency>
     <groupId>com.alibaba.cloud</groupId>
     <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
 </dependency>
 
-<!-- Spring Cloud LoadBalancer（服务发现时必须） -->
+<!-- Nacos 配置中心（通过 spring.config.import 导入，无需 bootstrap） -->
+<dependency>
+    <groupId>com.alibaba.cloud</groupId>
+    <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+</dependency>
+```
+
+**LoadBalancer** 不是每个服务都加：
+
+| 模块                          | 是否需要 | 原因                 |
+| ----------------------------- | -------- | -------------------- |
+| gateway-service               | 是       | lb:// 路由           |
+| order-service                 | 是       | OpenFeign 服务名调用 |
+| user-service、product-service | 否       | 当前没有下游调用     |
+
+根 pom.xml 的 dependencyManagement 只锁定版本，不会把依赖加入子模块；不要在父工程 dependencies 中加入 LoadBalancer。
+
+### 2.6 客户端负载均衡 — Spring Cloud LoadBalancer
+
+#### 为什么需要 LoadBalancer
+
+服务发现（§2.7）解决了"实例在哪里"——Nacos 返回一组 IP。但如果有 3 个实例，请求发给谁？这就是 LoadBalancer 的职责：**从多个实例中选一个，把请求发出去**。
+
+> **什么是"多实例"？** 同一个微服务（如 product-service）部署了 3 份，跑在不同机器上，各自独立向 Nacos 注册。目的是**负载均衡**（请求分散到多台机器）和**高可用**（一个挂了还有 2 个继续服务）。流量大了加实例，流量小了减实例——这就是水平扩展。
+
+```
+                    Nacos 返回
+                    ──────────
+                    ① 192.168.1.10:8082
+                    ② 192.168.1.11:8082
+                    ③ 192.168.1.12:8082
+                         │
+order-service ──→ LoadBalancer ──→ 选一个实例 ──→ 发起 HTTP 请求
+                    │
+                    默认策略：轮询（Round Robin）
+                    第 1 次 → ①    第 2 次 → ②    第 3 次 → ③    第 4 次 → ① ...
+```
+
+> **前端类比**：LoadBalancer ≈ Nginx 的 `upstream`。前端把请求发给 Nginx，Nginx 从后端列表中轮询选一个。区别是 LoadBalancer 跑在**调用方进程内**（客户端负载均衡），不需要额外的 Nginx 节点。
+
+#### 谁需要 LoadBalancer
+
+| 调用方式                             | 谁在用 LoadBalancer | 触发场景               |
+| ------------------------------------ | ------------------- | ---------------------- |
+| Gateway `lb://`                      | gateway-service     | 网关路由转发到下游服务 |
+| OpenFeign `@FeignClient(name="xxx")` | order-service       | 通过服务名调用其他服务 |
+
+> **关键点**：LoadBalancer 只部署在**调用方**。被调用的服务（如 user-service、product-service）不需要加此依赖。
+
+#### 依赖与使用
+
+LoadBalancer 已在 §2.5 的依赖范围表中说明。添加依赖后，Gateway 和 OpenFeign **自动使用它**，无需额外配置：
+
+```xml
+<!-- 调用方模块添加（如 order-service、gateway-service） -->
 <dependency>
     <groupId>org.springframework.cloud</groupId>
     <artifactId>spring-cloud-starter-loadbalancer</artifactId>
 </dependency>
 ```
 
-> **LoadBalancer 的作用**：如果一个服务注册了 3 个实例，LoadBalancer 用轮询策略从 3 个 IP 中选一个。它是 Nacos 服务发现的标准搭档。
+Gateway 的 `lb://` 前缀和 OpenFeign 的 `@FeignClient(name = "product-service")` 都会自动触发 LoadBalancer——你不需要写任何 LoadBalancer 代码，只需确保依赖存在。
 
-**第二步：配置 Nacos 地址**（application.yml）
+### 2.7 注册与发现
 
-```yaml
-spring:
-  application:
-    name: product-service # 服务名 = Nacos 中的注册名
-  cloud:
-    nacos:
-      discovery:
-        server-addr: localhost:8848
-        namespace: # 留空 = public 命名空间
-        group: DEFAULT_GROUP
+以 product-service 为例，执行 .\mvnw.cmd -pl product-service spring-boot:run。应用拉取 product-service.yaml、监听 8082 后注册到 Nacos；可在控制台“服务管理 → 服务列表”查看，也可直接访问 http://localhost:8082/api/products/1。
 
-server:
-  port: 8082
-```
+Gateway 的 uri: lb://user-service 及 order-service 的 OpenFeign 都以服务名调用。调用方的 LoadBalancer 从 Nacos 健康实例中选择一个，无需写死 localhost:8081 或容器 IP。
 
-**第三步：启动类加注解**
+### 2.8 本章回顾
 
-```java
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+- nacos-init 导入配置，Java 应用启动后才注册实例。
+- 本地 application.yml 保存应用名、Nacos 地址与 spring.config.import。
+- Nacos YAML 保存端口、数据源与 Gateway 路由。
+- Discovery 解决“实例在哪里”；LoadBalancer 只由当前调用方模块使用。
 
-@SpringBootApplication
-@EnableDiscoveryClient    // ← 告诉 Spring Cloud："我要注册到 Nacos"
-public class ProductServiceApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(ProductServiceApplication.class, args);
-    }
-}
-```
-
-启动应用后，查看 Nacos 控制台 → 服务列表，你会看到 `product-service` 出现在列表中。对其他两个服务重复以上步骤，完成后 Nacos 中会有三个服务：
-
-```
-Nacos 服务列表
-─────────────────────
-服务名              实例数  健康实例
-user-service        1       1
-product-service     1       1
-order-service       1       1
-```
-
-### 2.4 服务发现：用服务名替代 IP
-
-注册完成后，`order-service` 如何调用 `product-service`？不再是写死 IP，而是用**服务名**。
-
-在 Spring Cloud 中，`RestTemplate` 配合 `@LoadBalanced` 即可实现服务名调用：
-
-```java
-import org.springframework.cloud.client.loadbalancer.LoadBalanced;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.client.RestTemplate;
-
-@Configuration
-public class RestTemplateConfig {
-
-    @Bean
-    @LoadBalanced    // ← 关键：让 RestTemplate 拥有服务名解析能力
-    public RestTemplate restTemplate() {
-        return new RestTemplate();
-    }
-}
-```
-
-使用服务名替代 IP 调用：
-
-```java
-@Service
-@RequiredArgsConstructor
-public class OrderService {
-
-    private final RestTemplate restTemplate;
-
-    public ProductDTO getProduct(Long productId) {
-        // ❌ 旧方式：http://192.168.1.100:8082/products/42
-        // ✅ 新方式：用服务名 product-service
-        String url = "http://product-service/products/" + productId;
-        return restTemplate.getForObject(url, ProductDTO.class);
-    }
-}
-```
-
-`@LoadBalanced` 背后发生了什么：
-
-```
-restTemplate.getForObject("http://product-service/products/42", ...)
-    │
-    ▼
-Spring Cloud LoadBalancer 拦截请求
-    │
-    ├── 向 Nacos 查询 "product-service" 的实例列表
-    │   → [172.17.0.4:8082, 172.17.0.5:8082, 172.17.0.6:8082]
-    │
-    ├── 通过负载均衡策略选一个（默认轮询）
-    │   → 172.17.0.5:8082
-    │
-    └── 将 URL 替换为真实地址
-        → http://172.17.0.5:8082/products/42
-```
-
-> **RestTemplate 不是最终方案**。虽然能工作，但 URL 拼接仍然啰嗦。§3 将引入 OpenFeign——声明式 HTTP 客户端，让远程调用像本地方法调用一样简洁。
-
-### 2.5 服务发现的完整请求链路
-
-```
-order-service 启动
-    │
-    ├──①→ 向 Nacos 注册："我是 order-service，地址 172.17.0.5:8083"
-    │      注册后每 5 秒发一次心跳
-    │
-product-service 启动
-    │
-    └──②→ 向 Nacos 注册："我是 product-service，地址 172.17.0.4:8082"
-
-用户请求到达 order-service
-    │
-    ├──③→ order-service 需要调用 product-service
-    │      restTemplate.getForObject("http://product-service/products/42")
-    │
-    ├──④→ LoadBalancer 向 Nacos 查询 "product-service" 的实例列表
-    │      Nacos 返回：[172.17.0.4:8082]（只有健康实例）
-    │
-    ├──⑤→ LoadBalancer 选一个实例 → 172.17.0.4:8082
-    │
-    └──⑥→ 发起真实 HTTP 请求 → http://172.17.0.4:8082/products/42
-           │
-           └──→ product-service 处理请求，返回数据
-```
-
-### 2.6 本节回顾
-
-```
-问题                      解决方案                    去除的痛点
-────                      ────────                    ──────────
-服务地址写死        →    服务启动时注册到 Nacos        IP 变更不用改代码
-单点调用            →    LoadBalancer 从实例列表选一个  自动负载均衡
-实例挂了不知道      →    Nacos 心跳检测 + 自动剔除      故障实例自动摘除
-手动维护地址簿      →    所有服务找 Nacos 查询         零人工维护
-```
-
-> **接下来**：RestTemplate + 服务名虽然解决了地址发现问题，但每次调用都要拼接 URL + 手动类型转换。§3 引入 OpenFeign——声明式 HTTP 客户端，让你像写接口一样写远程调用。
+> **接下来**：§3 使用 order-service 中已存在的 OpenFeign 学习服务间调用。
 
 ---
 
 ## 3. 远程服务调用 — OpenFeign
-
-§2 用 `RestTemplate` + `@LoadBalanced` 实现了服务名调用。能用，但不好用。本节引入声明式 HTTP 客户端 OpenFeign，彻底消灭 URL 拼接和手动类型转换。
-
-### 3.0 问题：RestTemplate 的局限
-
-回顾 §2.4 的代码：
-
-```java
-// ❌ RestTemplate 调用：手写 URL、手动类型转换、占位符容易错位
-String url = "http://product-service/products/" + productId;
-ProductDTO product = restTemplate.getForObject(url, ProductDTO.class);
-
-// 传查询参数更啰嗦：
-String url = "http://product-service/products?name={name}&minPrice={minPrice}";
-ProductDTO[] products = restTemplate.getForObject(
-    url, ProductDTO[].class, name, minPrice);
-```
-
-痛点总结：
-
-- **URL 拼接**：手写字符串，路径容易拼错
-- **手动类型转换**：每次指定 `.class`
-- **占位符绑定**：`{name}` 和参数位置必须严格对应
-- **不可复用**：每个调用方都要写相同的模板代码
 
 ### 3.1 OpenFeign 核心思想
 
@@ -723,7 +522,7 @@ public interface ProductClient {      方法实现 = HTTP 请求 + JSON 序列�
 }
 ```
 
-> **前端类比**：Feign 接口 ≈ TypeScript API 类型定义。你在前端写 `getUser(id: string): Promise<User>`，Feign 让你在后端写 `ProductDTO getProduct(Long id)`。这是和 `MongoRepository`（声明 `findByName` 自动生成查询）同一套哲学：**声明代替实现**。
+> 这是和 `MongoRepository`（声明 `findByName` 自动生成查询）同一套哲学：**声明代替实现**。
 
 ### 3.2 三步接入 Feign
 
@@ -740,7 +539,6 @@ public interface ProductClient {      方法实现 = HTTP 请求 + JSON 序列�
 
 ```java
 @SpringBootApplication
-@EnableDiscoveryClient
 @EnableFeignClients    // ← 扫描所有 @FeignClient 接口，生成代理 Bean
 public class OrderServiceApplication {
     public static void main(String[] args) {
@@ -791,17 +589,6 @@ public class OrderService {
         // ...创建订单
     }
 }
-```
-
-**对比**：
-
-```java
-// RestTemplate：3 行，字符串 URL，手动类型转换
-String url = "http://product-service/products/" + productId;
-ProductDTO product = restTemplate.getForObject(url, ProductDTO.class);
-
-// Feign：1 行，类型安全，方法名即意图
-ProductDTO product = productClient.getProduct(productId);
 ```
 
 ### 3.3 Feign 配置：超时、日志
@@ -866,11 +653,11 @@ Token 自动从 order-service → product-service 透传，无需每个接口手
 ### 3.5 本节回顾
 
 ```
-RestTemplate                        OpenFeign
-───────────                        ────────
-手写 URL 拼接                →     接口 + 注解声明
+RestClient                          OpenFeign
+─────────                          ────────
+手写 URI + 链式调用          →     接口 + 注解声明
 手动类型转换                  →     自动根据泛型反序列化
-参数占位符绑定                →     @PathVariable/@RequestParam
+参数手动构造                  →     @PathVariable/@RequestParam
 不可复用                      →     接口可被多个 Service 注入
 ```
 
@@ -937,6 +724,15 @@ Gateway 本身也是一个 Spring Boot 应用。
     <groupId>com.alibaba.cloud</groupId>
     <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
 </dependency>
+<dependency>
+    <groupId>com.alibaba.cloud</groupId>
+    <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+</dependency>
+<!-- lb:// 路由必须有 LoadBalancer；Gateway starter 不应假定会自动带入它。 -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+</dependency>
 ```
 
 **路由配置**（application.yml）：
@@ -991,16 +787,11 @@ Gateway
 product-service 收到 GET /products/42
 ```
 
-### 4.3 自定义 GlobalFilter：网关鉴权
+### 4.3 自定义 GlobalFilter：拦截模式
+
+GlobalFilter 是 Gateway 的拦截器——每个请求都会经过。它有三个核心能力：**白名单放行**、**修改请求**、**拒绝请求**。完整的 JWT 鉴权实现见 §8，这里只看 Filter 骨架：
 
 ```java
-import org.springframework.cloud.gateway.filter.GlobalFilter;
-import org.springframework.core.Ordered;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
-import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Mono;
-
 @Component
 public class AuthFilter implements GlobalFilter, Ordered {
 
@@ -1008,20 +799,22 @@ public class AuthFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
 
-        // 登录接口放行
+        // ① 白名单：登录接口直接放行，不做任何拦截
         if (path.startsWith("/api/auth/")) {
             return chain.filter(exchange);
         }
 
+        // ② 拒绝：缺少必要信息时，直接返回 401
         String token = exchange.getRequest().getHeaders().getFirst("Authorization");
-        if (token == null || !token.startsWith("Bearer ")) {
+        if (token == null) {
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();  // 直接返回 401
+            return exchange.getResponse().setComplete();
         }
 
-        // 验证 JWT → 提取用户 ID → 写入 Header 传给下游
+        // ③ 修改请求：验证通过后，往 Header 中注入信息，传给下游
+        //    （完整实现：解析 JWT → 提取 userId → 写入 X-User-Id Header）
         exchange = exchange.mutate()
-                .request(r -> r.header("X-User-Id", "extracted-user-id"))
+                .request(r -> r.header("X-User-Id", "..."))
                 .build();
 
         return chain.filter(exchange);
@@ -1033,6 +826,8 @@ public class AuthFilter implements GlobalFilter, Ordered {
     }
 }
 ```
+
+> Gateway 基于 WebFlux，Filter 接口是 `GlobalFilter`（不是 MVC 的 `javax.servlet.Filter`）。请求对象是 `ServerWebExchange`，响应是 `Mono<Void>`。
 
 ### 4.4 CORS 统一配置
 
@@ -1079,182 +874,9 @@ public class CorsConfig {
 
 ---
 
-## 5. 统一配置管理 — Nacos Config
+## 5. 服务容错 — Sentinel
 
-### 5.0 问题：散落的配置文件
-
-3 个服务 × 2 个环境 = 6 个 application.yml。Nacos 地址变了？改 3 个文件，打包，部署。遗漏任何一个 = 连不上注册中心。
-
-### 5.1 Nacos Config 工作模型
-
-```
-        ① 启动时拉取配置
-  ┌──────────────────────────┐
-  │                          ▼
-┌─┴──────────┐     ┌─────────────────┐
-│user-service│     │   Nacos Config   │
-└────────────┘     │ ┌─────────────┐ │
-                   │ │order-service-dev.yml    │ │
-        ② 变更通知 │ │product-service-dev.yml  │ │
-  ◄────────────────│ │shared-common.yml       │ │
-      （长轮询）     │ └─────────────┘ │
-                   └─────────────────┘
-```
-
-**Data ID 命名规则**：
-
-```
-${spring.application.name}-${spring.profiles.active}.${file-extension}
-
-  order-service-dev.yml → order-service + dev + yml
-```
-
-### 5.2 三步接入
-
-**第一步：添加依赖**
-
-```xml
-<dependency>
-    <groupId>com.alibaba.cloud</groupId>
-    <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.springframework.cloud</groupId>
-    <artifactId>spring-cloud-starter-bootstrap</artifactId>
-</dependency>
-```
-
-**第二步：bootstrap.yml**（比 application.yml 更早加载）
-
-```yaml
-spring:
-  application:
-    name: order-service
-  cloud:
-    nacos:
-      config:
-        server-addr: localhost:8848
-        file-extension: yml
-```
-
-**第三步：配置写入 Nacos 控制台**
-
-```yaml
-# Nacos → 配置管理 → 新建配置
-# Data ID: order-service-dev.yml
-
-server:
-  port: 8083
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3309/order_db
-    username: root
-    password: root123
-order:
-  max-items-per-order: 100
-  shipping-fee: 15.0
-```
-
-### 5.3 @RefreshScope：热刷新
-
-`@RefreshScope` 的原理：Spring 为带此注解的 Bean 创建代理。Nacos 通知配置变更 → 代理销毁旧 Bean → 下次访问创建新 Bean（读到新值）。
-
-```java
-@Service
-@RefreshScope   // ← Nacos 配置变更 → Bean 自动重建 → 读到新值
-public class OrderService {
-
-    @Value("${order.max-items-per-order:50}")
-    private int maxItemsPerOrder;
-
-    public void validateOrder(OrderRequest request) {
-        if (request.getItems().size() > maxItemsPerOrder) {
-            throw new BusinessException(
-                "单笔最多 " + maxItemsPerOrder + " 件");
-        }
-    }
-}
-```
-
-**`@RefreshScope` 注意事项**：
-
-- 不要滥用——只在需要热刷新的 Bean 上使用。每个 `@RefreshScope` Bean 都是一个代理，有额外开销
-- `@Value` 注入的字段会刷新，但构造器注入的字段不会
-- 数据库连接池配置（如 `spring.datasource.url`）不会热刷新——需要重启应用
-- 适合刷新的配置：业务开关、阈值、外部服务地址
-
-> **前端类比**：Nacos Config = Vercel / Netlify Environment Variables 面板。你在面板改一个变量，所有部署实例自动生效。
-
-### 5.4 多环境与共享配置
-
-**多环境切换**：
-
-```yaml
-# bootstrap.yml
-spring:
-  profiles:
-    active: dev # 改 prod → 加载 order-service-prod.yml
-  cloud:
-    nacos:
-      config:
-        shared-configs: # 所有服务共享
-          - data-id: shared-common.yml
-            group: DEFAULT_GROUP
-            refresh: true
-```
-
-**命名空间（Namespace）隔离**：
-
-命名空间用于隔离不同环境（dev/test/prod）的配置和服务。在 Nacos 控制台创建命名空间后，拿到命名空间 ID：
-
-```yaml
-spring:
-  cloud:
-    nacos:
-      discovery:
-        namespace: dev-namespace-id # 服务注册也隔离
-      config:
-        namespace: dev-namespace-id # 配置也隔离
-```
-
-**Group 分组**：
-
-同一命名空间内，可以用 Group 进一步分组（如按业务线）：
-
-```yaml
-spring:
-  cloud:
-    nacos:
-      config:
-        group: ORDER_GROUP # 订单相关的配置放一个组
-```
-
-> **最佳实践**：命名空间做环境隔离（dev/test/prod），Group 做业务隔离。
-
-### 5.5 配置优先级
-
-```
-高 ──────────────────────────────────────────── 低
-Nacos 共享配置 → Nacos 本服务配置 → application.yml → bootstrap.yml
-```
-
-### 5.6 本节回顾
-
-```
-本地配置                            Nacos 配置中心
-────────                            ─────────────
-修改 = 改文件 + 部署           →    Nacos 控制台一点 + 自动热刷新
-多环境 = 散落各处的文件        →    集中管理，profiles.active 切换
-无版本记录                     →    版本历史 + 一键回滚
-```
-
-> **接下来**：服务注册、调用、网关、配置都已就绪。但微服务的真正挑战在于——一个服务出问题，如何不拖垮整个系统？§6 引入 Sentinel 解决这个问题。
-
----
-
-## 6. 服务容错 — Sentinel
-
-### 6.0 问题：雪崩效应
+### 5.0 问题：雪崩效应
 
 微服务架构中，一个服务依赖另一个服务。当被依赖的服务出问题时，调用方如果持续等待，最终会导致整个调用链崩溃。这就是**雪崩效应**：
 
@@ -1278,7 +900,7 @@ Nacos 共享配置 → Nacos 本服务配置 → application.yml → bootstrap.y
 
 Sentinel 从三个层面防止雪崩：**流量控制**（太多请求？拦住一部分）、**熔断降级**（被调用方太慢？快速失败）、**系统保护**（系统负载过高？整体限流）。
 
-### 6.1 Sentinel 是什么
+### 5.1 Sentinel 是什么
 
 Sentinel 是阿里巴巴开源的流量治理组件，以流量为切入点，从流量控制、熔断降级、系统负载保护等多个维度保护服务的稳定性。
 
@@ -1300,7 +922,7 @@ Sentinel 是阿里巴巴开源的流量治理组件，以流量为切入点，�
 
 > **前端类比**：Sentinel 的熔断降级 ≈ React 的 `<ErrorBoundary>` + `<Suspense fallback={Loading}>`。组件挂了 → 显示 fallback。服务挂了 → 返回降级数据，不阻塞调用方。
 
-### 6.2 三步接入 Sentinel
+### 5.2 三步接入 Sentinel
 
 **第一步：添加依赖**
 
@@ -1334,7 +956,7 @@ docker run -d --name sentinel -p 8090:8080 \
 
 > **注意**：Sentinel 采用懒加载——服务第一次被调用后才会出现在 Dashboard 中。等有了第一次请求再去 Dashboard 查看。
 
-### 6.3 流量控制：QPS 限流
+### 5.3 流量控制：QPS 限流
 
 限制某个接口每秒最多处理多少请求。超过的直接拒绝。
 
@@ -1377,9 +999,20 @@ public class ProductController {
 }
 ```
 
-### 6.4 熔断降级：慢调用自动熔断
+### 5.4 熔断降级：慢调用自动熔断
 
-当被调用方响应变慢时，Sentinel 自动熔断——直接走降级逻辑，不给下游压力：
+> **"熔断"是什么？** 熔断（Circuit Breaker）借鉴了电路保险丝的原理：当检测到下游服务异常（响应慢、报错多），自动**切断**对该服务的调用，后续请求直接走降级逻辑（fallback），不再等待超时。熔断不是永久的——经过一段冷却时间后，会放行少量请求"试探"下游是否恢复，成功则关闭熔断，失败则继续断开。三态转换如下：
+
+```
+     正常（Closed）                      熔断（Open）                       半开（Half-Open）
+  ┌─────────────────┐            ┌─────────────────────┐            ┌─────────────────────┐
+  │ 请求正常通过下游   │  ──慢调用>50%──▶  │ 不调用下游，直接 fallback │  ──冷却结束──▶  │ 放行 1 个请求试探      │
+  │                  │            │                     │            │  成功 → 回到 Closed   │
+  └─────────────────┘            └─────────────────────┘            │  失败 → 回到 Open     │
+                                                                    └─────────────────────┘
+```
+
+当被调用方响应变慢时，Sentinel 自动进入熔断——直接走降级逻辑，不给下游压力：
 
 在 Sentinel Dashboard 中配置熔断规则：
 
@@ -1406,6 +1039,8 @@ public class ProductController {
 代码中定义降级逻辑（与 Feign 整合时最常用）：
 
 ```java
+import org.springframework.cloud.openfeign.FallbackFactory;
+
 // Feign 接口中指定 fallback 工厂
 @FeignClient(
     name = "product-service",
@@ -1436,7 +1071,7 @@ public class ProductClientFallbackFactory
 }
 ```
 
-### 6.5 Sentinel 规则类型速览
+### 5.5 Sentinel 规则类型速览
 
 | 规则类型         | 解决什么问题 | 关键参数                       |
 | ---------------- | ------------ | ------------------------------ |
@@ -1446,7 +1081,7 @@ public class ProductClientFallbackFactory
 | **系统规则**     | 整体负载高   | CPU / Load / RT / 入口 QPS     |
 | **授权规则**     | 黑白名单     | 来源应用 / IP                  |
 
-### 6.6 本节回顾
+### 5.6 本节回顾
 
 ```
 没有 Sentinel                    有了 Sentinel
@@ -1457,13 +1092,13 @@ public class ProductClientFallbackFactory
 服务挂了返回 500             →    降级：返回兜底数据，体验不中断
 ```
 
-> **接下来**：Sentinel 防止了级联故障。但请求跨了 5 个服务，到底慢在哪一层？§7 引入链路追踪回答这个问题。
+> **接下来**：Sentinel 防止了级联故障。但请求跨了 5 个服务，到底慢在哪一层？§6 引入链路追踪回答这个问题。
 
 ---
 
-## 7. 分布式链路追踪 — Micrometer Tracing + Zipkin
+## 6. 分布式链路追踪 — Micrometer Tracing + Zipkin
 
-### 7.0 问题：跨服务请求像黑盒
+### 6.0 问题：跨服务请求像黑盒
 
 用户反馈"下单很慢，经常要 5 秒"。你打开日志，发现 3 个服务各有各的日志文件——你无法一眼看出是哪个环节慢了。
 
@@ -1478,7 +1113,7 @@ createOrder end (耗时 4.7s)   getProduct end (80ms)       getUser end (60ms)
 
 链路追踪的答案是：**给每个请求一个全局唯一 ID，在所有服务间传递，串联起完整的调用链**。
 
-### 7.1 核心概念：Trace ID 与 Span ID
+### 6.1 核心概念：Trace ID 与 Span ID
 
 ```
 一次下单请求的完整链路：
@@ -1504,7 +1139,7 @@ Parent Span ID = 上一步的 Span ID（形成父子关系）
 
 > **前端类比**：Trace ID 就像是 Chrome DevTools Network 面板中一次页面加载的"请求组"。你看到 `/api/orders` 花了 2.3s，点开看到它内部发起了 `/api/products`（2.1s）和 `/api/users`（0.2s）。Zipkin 就是跨服务的 Network 面板——同一 Trace ID 把所有相关请求串在一起。
 
-### 7.2 三步接入
+### 6.2 三步接入
 
 **第一步：添加依赖**（每个服务都加）
 
@@ -1543,7 +1178,7 @@ docker run -d --name zipkin -p 9411:9411 \
 
 **不需要写任何代码**。Spring Boot 自动为每个 HTTP 请求创建 Span，Feign 调用自动传播 Trace ID。
 
-### 7.3 Zipkin UI 解读
+### 6.3 Zipkin UI 解读
 
 访问 `http://localhost:9411`，点击"Run Query"查看最近的调用链：
 
@@ -1567,7 +1202,7 @@ docker run -d --name zipkin -p 9411:9411 \
 
 > **排查技巧**：找到最慢的那个 Span，点击查看它所在的服务实例 IP 和耗时明细。如果数据库查询慢，考虑加索引；如果 Feign 调用慢，检查网络或下游负载。
 
-### 7.4 自定义 Span：标记关键业务步骤
+### 6.4 自定义 Span：标记关键业务步骤
 
 除了框架自动创建的 Span，你还可以在关键业务逻辑中手动创建 Span：
 
@@ -1601,7 +1236,7 @@ public class OrderService {
 
 这样在 Zipkin 中，你不仅能看到 HTTP 调用和数据库查询，还能看到 `validate-order` 这个自定义 Span——精准定位业务逻辑的耗时分布。
 
-### 7.4 本节回顾
+### 6.4 本节回顾
 
 ```
 没有链路追踪                          有了链路追踪
@@ -1611,13 +1246,13 @@ public class OrderService {
 不知道一次请求跨了多少服务     →       拓扑图自动展示调用关系
 ```
 
-> **接下来**：链路追踪让你看清调用关系。但还有一个更根本的问题——跨服务的数据一致性怎么保证？§8 引入 Seata 解决分布式事务。
+> **接下来**：链路追踪让你看清调用关系。但还有一个更根本的问题——跨服务的数据一致性怎么保证？§7 引入 Seata 解决分布式事务。
 
 ---
 
-## 8. 分布式事务 — Seata
+## 7. 分布式事务 — Seata
 
-### 8.0 问题：@Transactional 失效了
+### 7.0 问题：@Transactional 失效了
 
 在单体中，下单操作是这样的：
 
@@ -1649,7 +1284,7 @@ order-service 的 order_db         product-service 的 product_db
   order_db 已经提交了 → 无法回滚 ← @Transactional 管不到另一个数据库
 ```
 
-### 8.1 Seata AT 模式原理
+### 7.1 Seata AT 模式原理
 
 Seata（Simple Extensible Autonomous Transaction Architecture）是阿里巴巴开源的分布式事务解决方案。AT 模式对业务代码侵入最小——只需一个注解 `@GlobalTransactional`。
 
@@ -1682,9 +1317,6 @@ TC = Transaction Coordinator（事务协调器，维护全局事务状态）
 ② product-service 执行 UPDATE → 记录 Undo Log（如何恢复原库存值）
 ③ user-service 执行 UPDATE → 记录 Undo Log（如何恢复原余额值）
 
-全部成功 → 提交（删除 Undo Log）
-任一失败 → 回滚（根据 Undo Log 反向执行恢复）
-
 阶段二：提交或回滚
 ─────────────────
 TC 收集所有 RM 的结果：
@@ -1692,7 +1324,7 @@ TC 收集所有 RM 的结果：
   • 任一失败 → 全局回滚（各 RM 根据 Undo Log 恢复数据）
 ```
 
-### 8.2 三步接入 Seata
+### 7.2 三步接入 Seata
 
 **第一步：启动 Seata Server**（Docker）
 
@@ -1701,6 +1333,17 @@ docker run -d --name seata-server -p 8091:8091 -p 7091:7091 \
   -e SEATA_PORT=8091 \
   seataio/seata-server:2.5.0
 ```
+
+**Seata 两个端口的分工**（Seata 2.0 引入）：
+
+| 端口     | 协议                 | 职责                                                                             |
+| -------- | -------------------- | -------------------------------------------------------------------------------- |
+| **7091** | HTTP                 | 管理控制台（浏览器访问 `http://localhost:7091`），查看事务状态、全局锁、回滚记录 |
+| **8091** | TCP（私有 RPC 协议） | 业务通信——TM、RM 与 TC 之间的 RPC 交互                                           |
+
+> **拆分动机**：Seata 1.x 所有流量走 8091。2.0 拆开是为了**安全隔离**——7091（控制台）可限制为仅运维网段访问，8091（RPC）对业务服务开放，互不干扰。
+
+> **与 Nacos 的对比**：Nacos 拆端口是协议升级（HTTP → HTTP/2 gRPC），Seata 拆端口是流量隔离（控制台 vs 业务）。
 
 **第二步：每个服务加依赖**
 
@@ -1723,7 +1366,7 @@ seata:
       default: localhost:8091
 ```
 
-### 8.3 @GlobalTransactional：一行注解
+### 7.3 @GlobalTransactional：一行注解
 
 ```java
 @Service
@@ -1752,7 +1395,7 @@ public class OrderService {
 
 任何一步失败 → Seata 自动回滚前面所有的数据库操作。
 
-### 8.4 最终一致性思想
+### 7.4 最终一致性思想
 
 不是所有跨服务操作都需要强一致性（Seata AT 模式）。很多场景下，**最终一致性**就够了：
 
@@ -1767,7 +1410,7 @@ public class OrderService {
 
 > **关键判断**：如果你能用"重试 + 补偿"解决的不一致，就别引入分布式事务。分布式事务是最后的手段，不是第一选择。
 
-### 8.5 本节回顾
+### 7.5 本节回顾
 
 ```
 没有 Seata                         有了 Seata
@@ -1777,13 +1420,13 @@ public class OrderService {
 回滚代码散落各处              →    一个注解，声明式回滚
 ```
 
-> **接下来**：分布式事务解决了数据一致性问题。但整个微服务系统的安全怎么做？认证该放在哪里？§9 介绍微服务中的安全方案。
+> **接下来**：分布式事务解决了数据一致性问题。但整个微服务系统的安全怎么做？认证该放在哪里？§8 介绍微服务中的安全方案。
 
 ---
 
-## 9. 安全 — 微服务中的认证授权
+## 8. 安全 — 微服务中的认证授权
 
-### 9.0 问题：认证该放在哪里
+### 8.0 问题：认证该放在哪里
 
 在单体中，认证很简单——用户登录后，Spring Security 在同一个 JVM 中管理 SecurityContext。但微服务中有两个选择：
 
@@ -1806,13 +1449,15 @@ public class OrderService {
 
 **推荐方案 B**：网关统一认证 + 下游服务信任 Header。这与现有的 `spring-security-guide.md` 是互补关系——单体 Security 指南讲 JWT 认证本身，本节点讲"在微服务架构中把认证放在哪里"。
 
-### 9.1 网关统一认证流程
+### 8.1 网关统一认证：完整实现
+
+网关通过 GlobalFilter 拦截所有请求，完成 JWT 验证后将用户身份注入 Header 传给下游：
 
 ```
 用户请求（Authorization: Bearer eyJ...）
     │
     ▼
-Gateway AuthFilter（§4.3 已实现）
+Gateway AuthFilter
     │
     ├──① 从 Header 取出 JWT
     ├──② 验证签名 + 有效期
@@ -1825,7 +1470,78 @@ order-service
     └── 从 X-User-Id 获取当前用户（信任网关已验证）
 ```
 
-### 9.2 下游服务如何获取当前用户
+完整实现代码（Gateway 模块）：
+
+```java
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+
+@Component
+public class AuthFilter implements GlobalFilter, Ordered {
+
+    // ⚠️ 生产环境应从配置中心读取，不可硬编码
+    private static final String JWT_SECRET = "your-256-bit-secret-key-min-32-chars!!";
+    private static final SecretKey KEY =
+            Keys.hmacShaKeyFor(JWT_SECRET.getBytes(StandardCharsets.UTF_8));
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        String path = exchange.getRequest().getURI().getPath();
+
+        // 登录接口放行
+        if (path.startsWith("/api/auth/")) {
+            return chain.filter(exchange);
+        }
+
+        String token = exchange.getRequest().getHeaders().getFirst("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        try {
+            // ① 验证 JWT：验签 + 有效期 + 提取 Claims
+            Claims claims = Jwts.parser()
+                    .verifyWith(KEY)
+                    .build()
+                    .parseSignedClaims(token.substring(7)) // 去掉 "Bearer " 前缀
+                    .getPayload();
+
+            // ② 从 Claims 中提取用户 ID
+            String userId = claims.getSubject();
+
+            // ③ exchange.mutate() 将 userId 写入请求头，传给下游服务
+            exchange = exchange.mutate()
+                    .request(r -> r.header("X-User-Id", userId))
+                    .build();
+
+        } catch (Exception e) {
+            // JWT 过期、签名无效、格式错误 → 一律 401
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        return chain.filter(exchange);
+    }
+
+    @Override
+    public int getOrder() {
+        return -1;  // 数字越小越先执行
+    }
+}
+```
+
+### 8.2 下游服务如何获取当前用户
 
 下游服务不需要再次验签 JWT，直接从网关传入的 Header 中获取用户信息：
 
@@ -1843,7 +1559,7 @@ public class OrderController {
 }
 ```
 
-### 9.3 Feign 调用时 Token 透传
+### 8.3 Feign 调用时 Token 透传
 
 当 order-service 通过 Feign 调用 product-service 时，Token 需要继续传递（回想 §3.4 的 RequestInterceptor）：
 
@@ -1872,9 +1588,45 @@ public class FeignConfig {
 }
 ```
 
-### 9.4 下游服务的 SecurityContext 适配
+### 8.4 下游服务的 SecurityContext 适配
 
-网关验证了 JWT，但下游服务怎么让 Spring Security 认识这个用户？答案是写一个 Filter 从 `X-User-Id` 构建 `SecurityContext`：
+网关验证了 JWT，但下游服务怎么让 Spring Security 认识这个用户？答案是写一个 Filter 从 `X-User-Id` 构建 `SecurityContext`。
+
+**信任链：网关验证 + 下游信任 = 完整闭环**
+
+下游之所以能"跳过验证"，是因为网关在 §8.1 的 `AuthFilter` 中已经完成了全部验证工作。两端代码的协作关系：
+
+```
+§8.1 网关 AuthFilter                     §8.4 下游 GatewayAuthFilter
+────────────────────                    ───────────────────────────
+① Jwts.parser().verifyWith(KEY)         ① request.getHeader("X-User-Id")
+       .parseSignedClaims(token)            ← 读网关注入的 Header
+   → 验签名：token 未被篡改 ✓
+   → 验有效期：token 未过期 ✓
+
+② String userId = claims.getSubject()   ② new UsernamePasswordAuthenticationToken(
+   → 从 JWT Claims 提取身份                     userId, null, authorities)
+
+③ exchange.mutate()                     ③ SecurityContextHolder.setAuthentication(auth)
+   .request(r - r.header(                    → 后续 @PreAuthorize 正常工作
+       "X-User-Id", userId))            ← 不再验证：能到达这里的 X-User-Id
+   → 注入 Header                             必定是网关 ①+②+③ 写入的
+```
+
+存入 `SecurityContextHolder` 后，Spring Security 的整个框架就"看见"这个用户了：
+
+```
+SecurityContextHolder（ThreadLocal，每个请求线程独立一份）
+        │
+        └── SecurityContext
+                │
+                └── Authentication = auth  ← setAuthentication() 塞进去
+                        │
+                        ├── auth.getPrincipal()      → "123"         ← @PreAuthorize 从这里取
+                        ├── auth.getAuthorities()    → [ROLE_USER]   ← hasRole("USER") 从这里取
+                        └── auth.isAuthenticated()   → true          ← 是否放行
+
+```
 
 ```java
 import jakarta.servlet.FilterChain;
@@ -1898,7 +1650,7 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
 
         String userId = request.getHeader("X-User-Id");
         if (userId != null) {
-            // 信任网关已认证 → 构建 Authentication
+            // 信任网关已认证 → 直接构建带 userId 的已认证 token
             UsernamePasswordAuthenticationToken auth =
                     new UsernamePasswordAuthenticationToken(
                         userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -1919,13 +1671,37 @@ http.addFilterBefore(
 
 这样下游 Controller 中 `@PreAuthorize`、`SecurityContextHolder.getContext().getAuthentication()` 都能正常工作。
 
+> **那 `UserDetailsService` 去哪了？** 对比两种模式的认证流程：
+>
+> ```
+> ┌── 标准认证流程（如登录接口）──────────────────────────────────┐
+> │                                                              │
+> │  请求 → AuthenticationManager                                │
+> │       → UserDetailsService.loadUserByUsername("zhangsan")    │
+> │       → 从数据库查出用户 → 比对密码                           │
+> │       → 构建带 UserDetails 的 token → 存入 SecurityContext    │
+> │                                                              │
+> │  UserDetailsService 的作用：查数据库 + 验证密码               │
+> └──────────────────────────────────────────────────────────────┘
+>
+> ┌── 网关信任模式（微服务内部调用）───────────────────────────────┐
+> │                                                              │
+> │  请求（Header: X-User-Id=123）                                │
+> │       → GatewayAuthFilter 读取 X-User-Id                      │
+> │       → 直接构建带 userId 的已认证 token                       │
+> │       → 存入 SecurityContext（跳过数据库查询）                  │
+> │                                                              │
+> │  UserDetailsService 不需要：网关已验过 JWT，下游只需信任       │
+> └──────────────────────────────────────────────────────────────┘
+> ```
+
 本指南不重复 `spring-security-guide.md` 的内容。阅读顺序建议：
 
 ```
 ① spring-security-guide.md（单体 Security）
    掌握：JWT 生成/验证、SecurityFilterChain、@PreAuthorize、SecurityContextHolder
 
-② 本节点 §9（微服务 Security）
+② 本节点 §8（微服务 Security）
    掌握：认证放在网关、Token 透传、与单体 Security 的差异
 
 ③ 实战：网关 + Security 整合
@@ -1934,7 +1710,7 @@ http.addFilterBefore(
    → Controller 中 @PreAuthorize 正常工作
 ```
 
-### 9.5 本节回顾
+### 8.5 本节回顾
 
 ```
 单体安全                             微服务安全
@@ -1946,7 +1722,7 @@ SecurityContext 在本地管理       →    X-User-Id Header 跨服务传递
 
 ---
 
-## 10. 延伸阅读：消息驱动 — Spring Cloud Stream + RocketMQ
+## 9. 延伸阅读：消息驱动 — Spring Cloud Stream + RocketMQ
 
 前 9 章覆盖了微服务的同步通信模式（请求-响应）。但很多场景用异步通信更合适：
 
@@ -1991,9 +1767,9 @@ public Consumer<Order> orderConsumer() {
 
 ---
 
-## 11. 实战决策
+## 10. 实战决策
 
-### 11.1 什么时候该拆？什么时候不该拆？
+### 10.1 什么时候该拆？什么时候不该拆？
 
 ```
 该拆的信号                         不该拆的信号
@@ -2031,7 +1807,7 @@ public Consumer<Order> orderConsumer() {
   □ 完善监控和告警
 ```
 
-### 11.2 组件选型决策树
+### 10.2 组件选型决策树
 
 ```
 你需要什么能力？
@@ -2054,16 +1830,16 @@ public Consumer<Order> orderConsumer() {
     └── 消息队列 → RocketMQ（阿里系首选）/ Kafka（大数据场景）/ RabbitMQ
 ```
 
-### 11.3 10 个常见反模式
+### 10.3 10 个常见反模式
 
 | #   | 反模式           | 问题                                       | 正确做法                                         |
 | --- | ---------------- | ------------------------------------------ | ------------------------------------------------ |
 | 1   | 拆得太细         | 一个功能 3 个服务，调试地狱                | 先按业务边界拆（用户/商品/订单），不过早按技术拆 |
 | 2   | 共享数据库       | 所有服务连同一个库 → 单体换皮              | 每个服务独立数据库，通过 API 通信                |
-| 3   | 分布式事务滥用   | 发通知也用 Seata，性能骤降                 | 能用最终一致性就别用强一致（§8.4）               |
-| 4   | 没有熔断         | 一个服务挂了，全链路雪崩                   | 所有 Feign 调用必须有 fallback（§6.4）           |
-| 5   | 没有链路追踪     | 出问题不知道看哪个服务的日志               | 接入 Micrometer Tracing + Zipkin（§7）           |
-| 6   | 配置硬编码       | Nacos 地址写在 application.yml             | 用 Nacos Config 集中管理（§5）                   |
+| 3   | 分布式事务滥用   | 发通知也用 Seata，性能骤降                 | 能用最终一致性就别用强一致（§7.4）               |
+| 4   | 没有熔断         | 一个服务挂了，全链路雪崩                   | 所有 Feign 调用必须有 fallback（§5.4）           |
+| 5   | 没有链路追踪     | 出问题不知道看哪个服务的日志               | 接入 Micrometer Tracing + Zipkin（§6）           |
+| 6   | 配置硬编码       | Nacos 地址写在 application.yml             | 用 Nacos Config 集中管理（§2.7）                 |
 | 7   | 网关做业务逻辑   | Gateway 里写订单校验 → 网关变成新单体      | 网关只做路由 + 认证 + 限流，业务逻辑在服务中     |
 | 8   | 没有统一响应格式 | 3 个服务返回 3 种 JSON 格式 → 前端适配地狱 | 参考你已有的 GlobalResponseBodyAdvice 模式统一   |
 | 9   | 同步调用链过长   | A → B → C → D，一次请求串行等 4 个服务     | 能并行的并行，能异步的异步                       |
@@ -2071,9 +1847,9 @@ public Consumer<Order> orderConsumer() {
 
 ---
 
-## 12. 速查清单
+## 11. 速查清单
 
-### 12.1 依赖坐标速查
+### 11.1 依赖坐标速查
 
 ```xml
 <!-- ========== 父 POM（统一版本管理） ========== -->
@@ -2083,7 +1859,7 @@ public Consumer<Order> orderConsumer() {
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-dependencies</artifactId>
-            <version>2025.1.2</version>
+            <version>2025.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -2091,7 +1867,7 @@ public Consumer<Order> orderConsumer() {
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-            <version>2025.1.0.0</version>
+            <version>2025.0.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -2105,14 +1881,10 @@ public Consumer<Order> orderConsumer() {
     <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
 </dependency>
 
-<!-- Nacos 配置中心（bootstrap.yml 也需要） -->
+<!-- Nacos 配置中心（通过 spring.config.import 导入，无需 bootstrap） -->
 <dependency>
     <groupId>com.alibaba.cloud</groupId>
     <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.springframework.cloud</groupId>
-    <artifactId>spring-cloud-starter-bootstrap</artifactId>
 </dependency>
 
 <!-- OpenFeign 远程调用 -->
@@ -2152,24 +1924,27 @@ public Consumer<Order> orderConsumer() {
     <groupId>org.springframework.cloud</groupId>
     <artifactId>spring-cloud-starter-gateway</artifactId>
 </dependency>
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+</dependency>
 ```
 
-### 12.2 注解速查
+### 11.2 注解速查
 
-| 注解                       | 位置               | 作用             | 章节 |
-| -------------------------- | ------------------ | ---------------- | ---- |
-| `@EnableDiscoveryClient`   | 启动类             | 注册到 Nacos     | §2.3 |
-| `@EnableFeignClients`      | 启动类             | 扫描 Feign 接口  | §3.2 |
-| `@FeignClient(name="xxx")` | 接口               | 声明远程服务调用 | §3.2 |
-| `@LoadBalanced`            | RestTemplate Bean  | 服务名 → IP 解析 | §2.4 |
-| `@RefreshScope`            | Service/Controller | 配置热刷新       | §5.3 |
-| `@SentinelResource`        | Controller 方法    | 声明限流/降级    | §6.3 |
-| `@GlobalTransactional`     | Service 方法       | 分布式事务       | §8.3 |
-| `@SpringBootApplication`   | 启动类             | Spring Boot 标配 | —    |
-| `@RestController`          | Controller         | REST API         | —    |
-| `@Service`                 | Service            | 业务逻辑         | —    |
+| 注解                              | 位置                    | 作用                                            | 章节 |
+| --------------------------------- | ----------------------- | ----------------------------------------------- | ---- |
+| （无需 `@EnableDiscoveryClient`） | 启动类                  | Nacos Discovery 自动注册                        | §2.6 |
+| `@EnableFeignClients`             | 启动类                  | 扫描 Feign 接口                                 | §3.2 |
+| `@FeignClient(name="xxx")`        | 接口                    | 声明远程服务调用                                | §3.2 |
+| `@LoadBalanced`                   | RestClient.Builder Bean | RestClient 场景中服务名 → IP 解析；本项目未使用 | §3.0 |
+| `@SentinelResource`               | Controller 方法         | 声明限流/降级                                   | §5.3 |
+| `@GlobalTransactional`            | Service 方法            | 分布式事务                                      | §7.3 |
+| `@SpringBootApplication`          | 启动类                  | Spring Boot 标配                                | —    |
+| `@RestController`                 | Controller              | REST API                                        | —    |
+| `@Service`                        | Service                 | 业务逻辑                                        | —    |
 
-### 12.3 配置项速查
+### 11.3 配置项速查
 
 ```yaml
 # ========== Nacos Discovery ==========
@@ -2244,7 +2019,7 @@ seata:
       default: localhost:8091
 ```
 
-### 12.4 Docker Compose 速查
+### 11.4 Docker Compose 速查
 
 ```yaml
 # 完整 docker-compose.yml（§1.4）
@@ -2258,7 +2033,7 @@ services:
   seata: # 分布式事务 → :8091
 ```
 
-### 12.5 服务端口速查
+### 11.5 服务端口速查
 
 ```
 Gateway         :8080     ← 前端唯一入口
@@ -2266,12 +2041,13 @@ user-service    :8081     ← MySQL user_db :3307
 product-service :8082     ← MySQL product_db :3308
 order-service   :8083     ← MySQL order_db :3309
 Nacos           :8848     ← 注册中心 + 配置中心
+Nacos Console   :8084     ← 宿主机端口，映射到容器内 :8080；避免占用 Gateway :8080
 Sentinel        :8090     ← 流量控制台
 Zipkin          :9411     ← 链路追踪 UI
 Seata           :8091     ← 分布式事务协调器
 ```
 
-### 12.6 调用链路速查
+### 11.6 调用链路速查
 
 ```
 一次下单请求的完整路径
@@ -2316,7 +2092,7 @@ order-service (:8083)
 > **学习路线建议**：
 >
 > 1. **快速体验**（1 小时）：启动 Docker Compose → 创建 user/product/order 三个空服务 → 配好 Nacos 注册发现 → 写一个 Feign 调用 → 浏览器访问通过 Gateway 路由。
-> 2. **系统学习**（1 天）：按本指南 §0 → §9 顺序阅读。每读完一章，在项目里实践对应的功能。
+> 2. **系统学习**（1 天）：按本指南 §0 → §8 顺序阅读。每读完一章，在项目里实践对应的功能。
 > 3. **进阶深入**（1 周）：添加 Sentinel 规则、接入 Zipkin、尝试 Seata 分布式事务。给每个 Feign 调加 fallback。
 > 4. **生产准备**（持续）：安全加固（JWT 密钥管理）、监控告警（Prometheus + Grafana）、CI/CD 流水线、容器化部署。
 >

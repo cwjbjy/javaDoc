@@ -1,186 +1,154 @@
-# 01-09 多线程基础
+# Java 多线程基础
 
-> 理解Java多线程编程，掌握线程同步与线程池使用
+> Audience: 有 Java 基础语法经验、首次接触多线程的开发者
+> Outcome: 能根据场景正确选用 synchronized / volatile / Lock / 线程池 / 原子类 / CompletableFuture，理解每条链路的代价和边界
+> Applicable version: JDK 17
 
-## 1. 线程基础
+## Scope
 
-### 进程 vs 线程
+多线程编程的入口问题不是"有哪些 API"，而是"我的数据被多个线程同时访问时，怎样保证正确"。这篇指南沿着这个问题的递进链条展开：从最基础的互斥（synchronized）出发，到更轻量的可见性保证（volatile），再到更灵活的控制（Lock），然后解决线程本身的创建成本（线程池），接着用无锁方案替代锁（原子类），最后用声明式编排替代阻塞等待（CompletableFuture）。
 
-- **进程**：操作系统分配资源的基本单位，独立的内存空间
-- **线程**：进程内的执行单元，共享进程资源
+**涵盖**: 上述链条中的关键机制、使用场景、选型权衡。
+**不涵盖**: `Future` 接口（JDK 8 起由 `CompletableFuture` 取代，不单独介绍）、响应式编程、JMM 形式化定义、`ThreadLocal`、ForkJoinPool 自定义。
 
-```java
-// 获取当前线程
-Thread currentThread = Thread.currentThread();
-String name = currentThread.getName();  // 线程名
-long id = currentThread.getId();        // 线程ID
-```
+## 目录
 
----
-
-## 2. 创建线程的3种方式
-
-### 方式1：继承 Thread 类
-
-```java
-public class MyThread extends Thread {
-    @Override
-    public void run() {
-        System.out.println("Thread running: " + getName());
-    }
-}
-
-// 使用
-MyThread thread = new MyThread();
-thread.start();  // 启动线程
-```
-
-### 方式2：实现 Runnable 接口（推荐）
-
-```java
-public class MyRunnable implements Runnable {
-    @Override
-    public void run() {
-        System.out.println("Thread running: " + Thread.currentThread().getName());
-    }
-}
-
-// 使用
-Thread thread = new Thread(new MyRunnable());
-thread.start();
-
-// Lambda 写法
-Thread thread2 = new Thread(() -> {
-    System.out.println("Thread running");
-});
-thread2.start();
-```
-
-### 方式3：实现 Callable 接口（有返回值）
-
-```java
-import java.util.concurrent.*;
-
-public class MyCallable implements Callable<String> {
-    @Override
-    public String call() throws Exception {
-        Thread.sleep(1000);
-        return "Task completed";
-    }
-}
-
-// 使用
-ExecutorService executor = Executors.newSingleThreadExecutor();
-Future<String> future = executor.submit(new MyCallable());
-
-// 获取结果（阻塞）
-String result = future.get();
-System.out.println(result);
-
-executor.shutdown();
-```
+- [1. 为什么需要多线程](#1-为什么需要多线程)
+- [2. 互斥：让共享数据安全](#2-互斥让共享数据安全)
+- [3. 可见性：比锁更轻的保证](#3-可见性比锁更轻的保证)
+- [4. 显式锁：当 synchronized 不够用](#4-显式锁当-synchronized-不够用)
+- [5. 线程池：管理线程的生命周期](#5-线程池管理线程的生命周期)
+- [6. 原子类：不用锁也能安全计数](#6-原子类不用锁也能安全计数)
+- [7. CompletableFuture：异步编排](#7-completablefuture异步编排)
+- [8. 场景速查与下一步](#8-场景速查与下一步)
 
 ---
 
-## 3. 线程状态与控制
+## 1. 为什么需要多线程
 
-### 线程状态
+### 问题：单线程不够快
+
+一个 HTTP 请求从接收、查数据库、调第三方服务到返回结果，大量时间花在等待上。如果一次只处理一个请求，CPU 大部分时间空闲，吞吐量极低。
+
+多线程让一个进程内同时运行多个执行路径。当线程 A 等待数据库响应时，操作系统可以切换到线程 B 去处理下一个请求——CPU 不再空转。
 
 ```
-NEW（新建）
-  ↓ start()
-RUNNABLE（可运行）
-  ↓ 获得CPU
-RUNNING（运行）
-  ↓ sleep/wait/join/IO
-BLOCKED/WAITING/TIMED_WAITING（阻塞/等待）
-  ↓ 完成/通知
-TERMINATED（终止）
+进程: 操作系统分配资源的单位（独立内存空间）
+线程: 进程内的执行单元（共享堆和方法区，独享栈）
 ```
 
-### 线程方法
+以 Chrome 浏览器为例：每个标签页是一个独立的渲染进程（崩溃不互相影响），每个进程内又有主线程（解析 HTML/CSS、布局、绘制）、合成线程、工作线程。这种层次结构让 UI 保持流畅的同时，还能并行处理网络请求和脚本执行。
+
+### 创建线程
+
+创建线程就是一件事：把你要执行的代码用 lambda 传给 `Thread`，然后调 `start()`。
+
+> Illustrative fragment
 
 ```java
-Thread thread = new Thread(() -> {
-    // 线程执行的代码
-});
-
-// 启动线程
-thread.start();
-
-// 等待线程结束
-thread.join();          // 一直等待
-thread.join(1000);      // 最多等待1秒
-
-// 线程休眠
-Thread.sleep(1000);     // 休眠1秒
-
-// 线程中断
-thread.interrupt();     // 中断线程
-boolean interrupted = Thread.interrupted();  // 检查是否中断
-
-// 线程优先级（1-10，默认5）
-thread.setPriority(Thread.MAX_PRIORITY);  // 10
-thread.setPriority(Thread.NORM_PRIORITY); // 5
-thread.setPriority(Thread.MIN_PRIORITY);  // 1
+// lambda 里的代码会在新线程中执行
+new Thread(() -> {
+    System.out.println("在新线程中执行");
+}).start();
 ```
+
+`start()` 做了两件事：在操作系统层面创建新线程，然后在线程内执行你传入的 lambda。如果直接调用 `thread.run()`，代码会在当前线程执行，不会创建新线程。
+
+> 不推荐继承 `Thread` 重写 `run()`。Java 单继承，继承了 `Thread` 就不能再继承其他类——耦合太重。
+
+### 线程的代价
+
+Java 线程是 1:1 映射到操作系统内核线程的——这不是轻量协程。每个线程默认分配约 1 MB 栈空间，创建和上下文切换都有成本。作为对比：
+
+|          | Java 传统线程 | Go goroutine         | JDK 21 虚拟线程         |
+| -------- | ------------- | -------------------- | ----------------------- |
+| 栈空间   | ~1 MB 固定    | ~2 KB 起步，动态增长 | 由 JVM 管理，按需分配   |
+| 创建上限 | 几千          | 百万级               | 百万级                  |
+| 调度者   | OS 内核       | Go 运行时            | JVM（复用少量 OS 线程） |
+
+在 JDK 17 下我们仍使用传统线程，所以需要合理控制线程数量：
+
+| 任务类型                   | 建议线程数   | 原因                                          |
+| -------------------------- | ------------ | --------------------------------------------- |
+| CPU 密集型（计算、加密）   | CPU 核数 + 1 | 某线程因缺页中断时，备用线程顶上              |
+| I/O 密集型（网络、数据库） | CPU 核数 × 2 | 等待 I/O 时线程阻塞不占 CPU，少数线程即可覆盖 |
+
+### 线程控制方法
+
+在线程间协调执行顺序时，用三个基本方法就够了：
+
+> Illustrative fragment
+
+```java
+// sleep: 暂停当前线程（不释放已持有的锁）
+Thread.sleep(2000);
+
+// join: 等待目标线程执行完毕
+Thread downloadThread = new Thread(() -> downloadFile());
+downloadThread.start();
+downloadThread.join();           // 主线程阻塞，等下载完成
+downloadThread.join(5000);       // 带超时：最多等 5 秒
+
+// interrupt: 协作式中断 —— 设置标志位，由目标线程自行检查
+Thread worker = new Thread(() -> {
+    while (!Thread.currentThread().isInterrupted()) { // 检查中断标志
+        System.out.println("工作中...");
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            break;               // 收到中断信号，退出
+        }
+    }
+});
+worker.start();
+Thread.sleep(3000); // 主线程等3秒
+worker.interrupt();              // 发出中断请求
+```
+
+**关键认知**：`interrupt()` 不会强制终止线程——它只设置一个标志位。线程需要主动检查 `isInterrupted()` 或在 `sleep`/`wait`/`join` 中捕获 `InterruptedException` 来响应。这是 Java 并发设计的核心哲学：**协作而非强制**。
+
+> 现在有了多个线程，它们同时访问同一个对象的数据会怎样？下一节解决这个问题。
 
 ---
 
-## 4. 线程同步（synchronized）
+## 2. 互斥：让共享数据安全
 
-### synchronized 方法
+### 问题：数据竞争
 
-```java
-public class Counter {
-    private int count = 0;
-    
-    // 同步方法（锁住整个对象）
-    public synchronized void increment() {
-        count++;
-    }
-    
-    public synchronized int getCount() {
-        return count;
-    }
-}
+两个线程同时对一个 `int count` 执行 `count++`。`count++` 看似一步，实际拆成三步：读 → 加 → 写。线程交错执行时：
 
-// 使用
-Counter counter = new Counter();
-
-Thread t1 = new Thread(() -> {
-    for (int i = 0; i < 1000; i++) {
-        counter.increment();
-    }
-});
-
-Thread t2 = new Thread(() -> {
-    for (int i = 0; i < 1000; i++) {
-        counter.increment();
-    }
-});
-
-t1.start();
-t2.start();
-t1.join();
-t2.join();
-
-System.out.println(counter.getCount());  // 2000（线程安全）
+```
+线程 A: 读 count=0  → 加得 1  →  写回 1
+线程 B:    读 count=0  → 加得 1  →  写回 1（覆盖！）
+结果：count=1，但应该是 2。
 ```
 
-### synchronized 代码块
+这种"读写改"不被整体保护的竞态条件，是多线程 bug 的最大来源。
+
+### 机制：synchronized
+
+`synchronized` 保证同一时刻只有一个线程进入被保护的代码块。它用对象的内置锁（monitor）实现互斥。Java 中每个对象都关联一个 monitor，线程进入 `synchronized` 块前必须先获取它。
+
+锁的是**对象**，不是代码。三种形式锁的是不同的对象：
+
+> Illustrative fragment
 
 ```java
 public class Counter {
     private int count = 0;
     private final Object lock = new Object();
-    
-    public void increment() {
-        synchronized (lock) {  // 锁住指定对象
-            count++;
-        }
+
+    // 形式一：锁实例方法 —— 锁 this
+    public synchronized void increment() {
+        count++;    // 等价于 synchronized(this) { count++; }
     }
-    
+
+    // 形式二：锁静态方法 —— 锁 Counter.class
+    public static synchronized void reset() {
+        // 等价于 synchronized(Counter.class) { ... }
+    }
+
+    // 形式三：锁指定对象 —— 最精细
     public void decrement() {
         synchronized (lock) {
             count--;
@@ -189,992 +157,515 @@ public class Counter {
 }
 ```
 
-### 静态同步方法
+**实例锁和静态锁是两把不同的锁**，它们之间不互斥。一个线程持有 `this` 锁执行 `increment()` 的同时，另一个线程可以持有 `Counter.class` 锁执行 `reset()`——因为它们锁的是不同对象。
+
+### 验证：线程安全计数器
+
+> Illustrative fragment
 
 ```java
-public class Counter {
-    private static int count = 0;
-    
-    // 锁住整个类
-    public static synchronized void increment() {
-        count++;
+Counter counter = new Counter();
+
+Thread t1 = new Thread(() -> {
+    for (int i = 0; i < 1000; i++) counter.increment();
+});
+Thread t2 = new Thread(() -> {
+    for (int i = 0; i < 1000; i++) counter.increment();
+});
+
+t1.start(); t2.start();
+t1.join();  t2.join();
+System.out.println(counter.getCount());   // 2000 —— 始终正确
+```
+
+### 权衡
+
+`synchronized` 的优势是简单——没有 `lock()`/`unlock()` 配对问题，JVM 会自动优化（偏向锁、轻量级锁、锁粗化）。代价是它只有两种状态：获取到锁或阻塞等待。你不能说"试一下，拿不到就算了"，也不能设置超时。当这些需求出现时，看 §4 的 `Lock`。
+
+> synchronized 解决了"同时改"的问题。但如果一个线程只写、另一个只读，真的需要锁吗？下一节介绍更轻的方案。
+
+---
+
+## 3. 可见性：比锁更轻的保证
+
+### 问题：读到的可能是过时值
+
+现代 CPU 有多级缓存。线程 A 修改变量后，新值可能只存在于 CPU 缓存或寄存器中，尚未写回主内存。线程 B 在另一个核心上读同一变量时，可能读到的是自己缓存中的旧值——这就是**可见性**问题。
+
+`synchronized` 能解决可见性（进入和退出 monitor 都会刷新缓存），但它的互斥语义太重了。如果一个变量只需要"写后立即可读"，不需要排斥并发写，有没有更轻的方案？
+
+### 机制：volatile
+
+`volatile` 修饰的变量享有两条保证：
+
+1. **可见性**：写操作立即刷新到主内存，读操作强制从主内存读取。
+2. **禁止指令重排序**：编译器不会把 `volatile` 变量的读写重排到内存屏障的另一侧。
+
+但它**不保证原子性**。这是理解 `volatile` 的关键限制。
+
+### volatile 不能替代 synchronized 的场景
+
+回到 `count++` 的例子——如果用 `volatile`：
+
+```
+volatile int count = 0;
+
+线程 A: 读 count=0（volatile 保证读到最新值 ✓）
+线程 B: 读 count=0（A 还没写回，读到 0 也正确 ✓）
+线程 A: 加得 1，写回（volatile 保证立即刷新 ✓）
+线程 B: 用旧值 0 加得 1，写回 1（覆盖！✗）
+// 两次 +1，结果只有 1
+```
+
+`volatile` 保证了**每一次读写**的可见性，但阻止不了"读-改-写"三步之间的线程交错。这是它和 `synchronized` 的本质区别。
+
+### volatile 的正确场景：状态标志
+
+> Illustrative fragment
+
+```java
+public class Worker implements Runnable {
+    private volatile boolean running = true;  // 多个线程可见
+
+    @Override
+    public void run() {
+        while (running) {
+            doWork();               // running 变化时，下一轮循环立即看到
+        }
+    }
+
+    public void stop() {
+        running = false;            // 写操作立即对其他线程可见
     }
 }
 ```
 
+这个场景满足 volatile 的全部前提：写入不依赖当前值，多个线程只读不写，只有一个写线程。
+
+### 权衡
+
+|      | synchronized                                  | volatile                 |
+| ---- | --------------------------------------------- | ------------------------ |
+| 保证 | 原子性 + 可见性 + 有序性                      | 可见性 + 有序性          |
+| 开销 | 较重（获取/释放 monitor）                     | 很轻（内存屏障）         |
+| 适用 | 复合操作（check-then-act, read-modify-write） | 独立读写（标志位、开关） |
+
+**选择法则**：如果写入依赖当前值（`count++`、`if (flag) flag = false`），用 `synchronized` 或原子类；如果只是独立的读写（状态标志、配置开关），用 `volatile`。
+
+> volatile 解决了"写完要立即可见"的问题，但没有解决"拿不到锁时想放弃"的问题。下一节介绍显式锁。
+
 ---
 
-## 5. Lock 锁（更灵活）
+## 4. 显式锁：当 synchronized 不够用
 
-### ReentrantLock
+### 问题：synchronized 的三种局限
+
+`synchronized` 好用，但有三件事它做不到：
+
+1. **非阻塞尝试**：线程要么拿到锁，要么无限期阻塞。不能说"试一下，拿不到就做别的"。
+2. **超时放弃**：没有"等 500 毫秒还拿不到就算了"。
+3. **读写分离**：读操作之间不需要互斥，但 `synchronized` 会强制所有操作串行。
+
+`java.util.concurrent.locks.Lock` 接口正是为解决这些局限而生。
+
+### ReentrantLock：可中断、可超时、可尝试
+
+"可重入"意味着同一线程可以多次获取同一把锁而不会死锁——每次 `lock()` 内部计数 +1，每次 `unlock()` 计数 -1，计数归零才真正释放。
+
+> Illustrative fragment
 
 ```java
-import java.util.concurrent.locks.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
-public class Counter {
-    private int count = 0;
+public class TaskQueue {
     private final Lock lock = new ReentrantLock();
-    
-    public void increment() {
-        lock.lock();  // 获取锁
+
+    public void process() {
+        lock.lock();                // 阻塞获取（等效 synchronized）
         try {
-            count++;
+            doWork();
         } finally {
-            lock.unlock();  // 必须在finally中释放锁
-        }
-    }
-    
-    // 尝试获取锁（非阻塞）
-    public void tryIncrement() {
-        if (lock.tryLock()) {
-            try {
-                count++;
-            } finally {
-                lock.unlock();
-            }
-        } else {
-            System.out.println("无法获取锁");
-        }
-    }
-    
-    // 带超时的尝试
-    public void tryIncrementWithTimeout() throws InterruptedException {
-        if (lock.tryLock(1, TimeUnit.SECONDS)) {
-            try {
-                count++;
-            } finally {
-                lock.unlock();
-            }
+            lock.unlock();          // 必须在 finally 中，防止死锁
         }
     }
 }
 ```
 
-### ReadWriteLock（读写锁）
+`synchronized` 做不到的操作：
+
+> Illustrative fragment
 
 ```java
-public class Cache {
-    private Map<String, String> map = new HashMap<>();
+// 非阻塞尝试
+if (lock.tryLock()) {
+    try { doWork(); }
+    finally { lock.unlock(); }
+} else {
+    handleBusy();                   // 拿不到锁时执行备选逻辑
+}
+
+// 带超时：最多等 1 秒
+if (lock.tryLock(1, TimeUnit.SECONDS)) {
+    try { doWork(); }
+    finally { lock.unlock(); }
+}
+```
+
+### ReentrantReadWriteLock：读写分离
+
+在缓存场景中，大多数操作是读取，极少写入。`ReentrantReadWriteLock` 维护一对锁：
+
+- **读锁（共享）**：多个线程可同时持有，只有没有写锁时才授予
+- **写锁（独占）**：只有一个线程持有，排斥所有读写
+
+> Illustrative fragment
+
+```java
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+public class ConfigCache {
+    private final Map<String, String> cache = new HashMap<>();
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Lock readLock = rwLock.readLock();
-    private final Lock writeLock = rwLock.writeLock();
-    
-    // 读操作（多个线程可同时读）
+
     public String get(String key) {
-        readLock.lock();
-        try {
-            return map.get(key);
-        } finally {
-            readLock.unlock();
-        }
+        rwLock.readLock().lock();
+        try { return cache.get(key); }
+        finally { rwLock.readLock().unlock(); }
     }
-    
-    // 写操作（独占）
+
     public void put(String key, String value) {
-        writeLock.lock();
-        try {
-            map.put(key, value);
-        } finally {
-            writeLock.unlock();
-        }
+        rwLock.writeLock().lock();
+        try { cache.put(key, value); }
+        finally { rwLock.writeLock().unlock(); }
     }
 }
 ```
+
+### 权衡
+
+|                | synchronized         | Lock                                 |
+| -------------- | -------------------- | ------------------------------------ |
+| 加解锁         | 隐式，JVM 管理       | 显式，必须 finally unlock            |
+| tryLock / 超时 | 不支持               | 支持                                 |
+| 读-写分离      | 不支持               | ReentrantReadWriteLock               |
+| 公平性         | 非公平（不保证顺序） | 可选公平模式                         |
+| 使用建议       | 简单场景首选         | 需要 tryLock / 超时 / 读写分离时使用 |
+
+**原则**：优先用 `synchronized`。只有当明确需要 `tryLock`、超时、或读写分离时，才升级到 `Lock`。代码简洁本身也是安全性——忘了 `unlock()` 是真实的 bug。
+
+> 现在你有了保护共享数据的工具。但每次创建新线程执行任务太昂贵了——下一节解决线程的复用问题。
 
 ---
 
-## 6. 线程池（推荐）
+## 5. 线程池：管理线程的生命周期
 
-### 为什么使用线程池
+### 问题：创建线程的成本
 
-```java
-// ❌ 频繁创建线程（开销大）
-for (int i = 0; i < 1000; i++) {
-    new Thread(() -> {
-        // 执行任务
-    }).start();
-}
+每次 `new Thread().start()` 都在请求操作系统分配内核线程——分配约 1 MB 栈空间、初始化线程上下文、加入调度队列。任务执行完线程就被销毁，下次再来还得重复。如果每个 HTTP 请求都新建线程，服务在请求量上来之前就会因为线程创建开销而崩溃。
 
-// ✅ 使用线程池（复用线程）
-ExecutorService executor = Executors.newFixedThreadPool(10);
-for (int i = 0; i < 1000; i++) {
-    executor.submit(() -> {
-        // 执行任务
-    });
-}
-executor.shutdown();
+线程池的思路很简单：提前创建一批线程放着，任务来了分配一个，用完归还，不销毁。
+
+### 为什么不推荐 Executors 快捷工厂
+
+JDK 提供了四类快捷方法：
+
+| 方法                                  | 队列                       | 风险               |
+| ------------------------------------- | -------------------------- | ------------------ |
+| `Executors.newFixedThreadPool(n)`     | 无界 LinkedBlockingQueue   | 任务积压耗尽堆内存 |
+| `Executors.newCachedThreadPool()`     | 无界 SynchronousQueue 行为 | 线程数无限增长     |
+| `Executors.newSingleThreadExecutor()` | 无界 LinkedBlockingQueue   | 任务积压耗尽堆内存 |
+| `Executors.newScheduledThreadPool(n)` | 无界 DelayedWorkQueue      | 任务积压耗尽堆内存 |
+
+它们的共同问题：**内部队列容量为 `Integer.MAX_VALUE`**（约 21 亿）。当任务提交速度快于处理速度时，任务对象在堆上无限堆积，直到 `OutOfMemoryError`。
+
+> 这些快捷方法适合演示和一次性脚本，不适合生产环境。生产环境中用 `ThreadPoolExecutor` 显式控制所有参数。
+
+### 核心机制：ThreadPoolExecutor
+
+线程池的任务分配逻辑：
+
+```
+提交任务
+  │
+  ├─ 当前线程数 < corePoolSize? ──是──▶ 创建新线程（即使有空闲线程）
+  │
+  ├─ 队列未满? ──是──▶ 入队等待
+  │
+  ├─ 当前线程数 < maximumPoolSize? ──是──▶ 创建新线程
+  │
+  └─ 以上都不满足 ──▶ 执行拒绝策略
 ```
 
-### 线程池类型
+理解这个流程的关键：**线程池优先增长到 corePoolSize，然后优先使用队列，队列满了才继续增长到 maximumPoolSize**。所以队列容量直接决定了缓冲能力。
+
+> Illustrative fragment
 
 ```java
 import java.util.concurrent.*;
-
-// 1. 固定大小线程池
-ExecutorService fixed = Executors.newFixedThreadPool(5);
-
-// 2. 单线程池
-ExecutorService single = Executors.newSingleThreadExecutor();
-
-// 3. 缓存线程池（动态增长）
-ExecutorService cached = Executors.newCachedThreadPool();
-
-// 4. 定时任务线程池
-ScheduledExecutorService scheduled = Executors.newScheduledThreadPool(2);
-```
-
-### 线程池使用
-
-```java
-ExecutorService executor = Executors.newFixedThreadPool(10);
-
-// 提交任务（无返回值）
-executor.execute(() -> {
-    System.out.println("Task running");
-});
-
-// 提交任务（有返回值）
-Future<String> future = executor.submit(() -> {
-    Thread.sleep(1000);
-    return "Result";
-});
-
-// 获取结果
-try {
-    String result = future.get();  // 阻塞等待
-    String result2 = future.get(5, TimeUnit.SECONDS);  // 超时
-} catch (InterruptedException | ExecutionException | TimeoutException e) {
-    e.printStackTrace();
-}
-
-// 关闭线程池
-executor.shutdown();           // 等待任务完成后关闭
-executor.shutdownNow();        // 立即关闭（中断任务）
-executor.awaitTermination(10, TimeUnit.SECONDS);  // 等待关闭
-```
-
-### 自定义线程池（推荐）
-
-```java
-// ❌ 不推荐使用 Executors（可能OOM）
-// ✅ 推荐手动创建 ThreadPoolExecutor
 
 ThreadPoolExecutor executor = new ThreadPoolExecutor(
-    5,                      // corePoolSize：核心线程数
-    10,                     // maximumPoolSize：最大线程数
-    60L,                    // keepAliveTime：空闲线程存活时间
-    TimeUnit.SECONDS,       // 时间单位
-    new LinkedBlockingQueue<>(100),  // 任务队列
+    5,                                  // corePoolSize: 平时保留的线程数
+    10,                                 // maximumPoolSize: 峰值上限
+    60L, TimeUnit.SECONDS,              // 非核心线程空闲 60s 后回收
+    new LinkedBlockingQueue<>(100),     // 有界队列：最多积压 100 个任务
     new ThreadPoolExecutor.CallerRunsPolicy()  // 拒绝策略
 );
-
-// 拒绝策略：
-// AbortPolicy：抛异常（默认）
-// CallerRunsPolicy：调用者线程执行
-// DiscardPolicy：丢弃任务
-// DiscardOldestPolicy：丢弃最老任务
 ```
+
+四种拒绝策略的选择：
+
+| 策略                  | 行为                            | 适用             |
+| --------------------- | ------------------------------- | ---------------- |
+| `AbortPolicy`（默认） | 抛出 RejectedExecutionException | 关键任务         |
+| `CallerRunsPolicy`    | 由提交任务的线程自己执行        | 利用调用者做缓冲 |
+| `DiscardPolicy`       | 静默丢弃                        | 日志等非关键任务 |
+| `DiscardOldestPolicy` | 丢弃队列头部（最旧的）          | 优先保证最新数据 |
+
+线程池需要优雅关闭——直接 `kill` 进程会让正在执行的任务中断。
+
+> Illustrative fragment
+
+```java
+executor.shutdown();        // 停止接收新任务，已提交的执行完
+if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+    executor.shutdownNow(); // 超时则强制终止
+}
+```
+
+### 权衡：线程数量怎么定
+
+这取决于任务是 CPU 密集型还是 I/O 密集型（见 §1）。但在实践中，更可靠的做法是**从保守值开始，用监控数据调整**——比如先设为核心数，观察 CPU 利用率和任务等待时间，再逐步上调。盲目使用公式比不设上限更危险。
+
+> JDK 21 的虚拟线程改变了这个范式——虚拟线程极轻量，你甚至可以为每个任务创建一个而无需池化。但在 JDK 17 下，`ThreadPoolExecutor` 仍然是标准答案。
+
+> 线程池解决了"线程复用"。但如果只是对一个计数器做 +1 操作，整个线程池 + Lock 的组合实在太重了。下一节用更轻的方式解决。
 
 ---
 
-## 7. 定时任务
+## 6. 原子类：不用锁也能安全计数
 
-### ScheduledExecutorService
+### 问题：锁对简单操作来说太重了
+
+一个请求计数器，只做 `count++`。如果用 `synchronized`，每次 +1 都要获取 monitor、上下文切换、释放 monitor。在每秒百万次计数的场景中，锁竞争会成为瓶颈。
+
+`java.util.concurrent.atomic` 包用 **CAS（Compare-And-Swap）** 替代锁。CAS 是现代 CPU 提供的原子指令，逻辑很直接：
+
+> "内存位置 V 的值是 A 吗？是的话更新为 B，不是的话告诉我实际值。失败就重试。"
+
+整个过程没有锁、没有线程阻塞、没有上下文切换——只在 CPU 指令层面自旋重试。
+
+### AtomicInteger
+
+> Illustrative fragment
 
 ```java
-ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+import java.util.concurrent.atomic.AtomicInteger;
 
-// 延迟执行（1秒后执行一次）
-scheduler.schedule(() -> {
-    System.out.println("Task executed");
-}, 1, TimeUnit.SECONDS);
+public class RequestCounter {
+    private final AtomicInteger count = new AtomicInteger(0);
 
-// 固定频率执行（每2秒执行一次）
-scheduler.scheduleAtFixedRate(() -> {
-    System.out.println("Task executed");
-}, 0, 2, TimeUnit.SECONDS);  // 初始延迟0秒，间隔2秒
+    public int record() {
+        return count.incrementAndGet();   // 原子 +1，无锁
+    }
 
-// 固定延迟执行（任务完成后延迟2秒再执行）
-scheduler.scheduleWithFixedDelay(() -> {
-    System.out.println("Task executed");
-}, 0, 2, TimeUnit.SECONDS);
-
-// 关闭
-scheduler.shutdown();
+    public int get() {
+        return count.get();               // volatile 语义，读到最新值
+    }
+}
 ```
+
+常用操作：
+
+| 方法                                      | 说明                     |
+| ----------------------------------------- | ------------------------ |
+| `incrementAndGet()` / `decrementAndGet()` | ±1 返回新值              |
+| `getAndAdd(int delta)`                    | 增加 delta 返回旧值      |
+| `compareAndSet(expect, update)`           | 等于 expect 才更新       |
+| `updateAndGet(IntUnaryOperator)`          | 用 lambda 做任意原子更新 |
+
+### LongAdder：高并发写场景的更优选择
+
+`AtomicLong` 在高并发写时有一个瓶颈：所有线程竞争同一个变量，CAS 失败就重试，重试越多浪费越多。`LongAdder` 将单一值分散到多个 Cell 上——线程 A 更新 Cell[0]，线程 B 更新 Cell[1]，竞争大幅降低。读取时再汇总所有 Cell。
+
+> Illustrative fragment
+
+```java
+import java.util.concurrent.atomic.LongAdder;
+
+public class HitCounter {
+    private final LongAdder hits = new LongAdder();
+
+    public void hit() {
+        hits.increment();           // 比 AtomicLong.incrementAndGet() 更快
+    }
+
+    public long total() {
+        return hits.sum();          // 汇总（读少用）
+    }
+}
+```
+
+### 权衡
+
+```
+场景 → 工具:
+  counter++ 且需要立即读值  →  AtomicInteger / AtomicLong
+  高并发写、偶尔读总数       →  LongAdder
+  引用类型 CAS               →  AtomicReference
+  boolean 标志的 CAS         →  AtomicBoolean
+```
+
+**原子类不是 `synchronized` 的替代品**。它只解决单个变量的原子更新；保护一段代码（多个变量、条件判断 + 更新）仍然是 `synchronized` 或 `Lock` 的领地。
+
+> 现在你知道如何安全地共享和更新数据。但前面的所有例子都在"等"——`join()` 等线程、`future.get()` 等结果、`lock.lock()` 等锁。等待意味着线程闲置，资源浪费。下一节用异步编排消除等待。
 
 ---
 
-## 8. 并发工具类
+## 7. CompletableFuture：异步编排
 
-### CountDownLatch（倒计时门闩）
+### 问题：阻塞等待浪费线程
 
-```java
-// 等待多个线程完成
-CountDownLatch latch = new CountDownLatch(3);
+调用远程服务时，线程发出 HTTP 请求后就阻塞等待响应——这段时间它不能干任何事，但占用着约 1 MB 栈空间和 OS 调度资源。如果有 100 个并发请求各等 200ms，需要 100 个线程全部阻塞在那里。
 
-for (int i = 0; i < 3; i++) {
-    new Thread(() -> {
-        System.out.println("Task " + Thread.currentThread().getName() + " completed");
-        latch.countDown();  // 计数减1
-    }).start();
-}
+异步编程的思路是：发起请求后**立即释放线程**，响应回来后用回调处理结果。`CompletableFuture`（JDK 8）把这个模式做成了声明式 API，使用体验和 JavaScript 的 Promise 非常接近：
 
-latch.await();  // 等待计数归零
-System.out.println("All tasks completed");
+```
+JS:  fetch(url).then(res => res.json()).then(data => render(data))
+Java: supplyAsync(() -> callApi()).thenApply(this::parse).thenAccept(this::render)
 ```
 
-### CyclicBarrier（循环栅栏）
+> `CompletableFuture` 实现了 `Future` 接口，但 `Future` 只提供阻塞的 `get()`，不支持回调和链式组合。JDK 8+ 中异步编程直接从 `CompletableFuture` 开始即可，不需要单独学习 `Future`。
 
-```java
-// 多个线程互相等待
-CyclicBarrier barrier = new CyclicBarrier(3, () -> {
-    System.out.println("All threads reached barrier");
-});
+### 创建异步任务
 
-for (int i = 0; i < 3; i++) {
-    new Thread(() -> {
-        try {
-            System.out.println(Thread.currentThread().getName() + " waiting");
-            barrier.await();  // 等待其他线程
-            System.out.println(Thread.currentThread().getName() + " continued");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }).start();
-}
-```
-
-### Semaphore（信号量）
-
-```java
-// 限制并发数
-Semaphore semaphore = new Semaphore(3);  // 最多3个线程同时执行
-
-for (int i = 0; i < 10; i++) {
-    new Thread(() -> {
-        try {
-            semaphore.acquire();  // 获取许可
-            System.out.println(Thread.currentThread().getName() + " running");
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            semaphore.release();  // 释放许可
-        }
-    }).start();
-}
-```
-
----
-
-## 9. 线程安全集合
-
-### ConcurrentHashMap（线程安全的Map）
-
-```java
-import java.util.concurrent.ConcurrentHashMap;
-
-// 创建
-ConcurrentHashMap<String, String> map = new ConcurrentHashMap<>();
-
-// 基本操作
-map.put("key1", "value1");
-String value = map.get("key1");
-map.remove("key1");
-
-// 原子操作
-// 如果不存在则添加
-map.putIfAbsent("key1", "value1");
-
-// 替换值
-map.replace("key1", "newValue");
-map.replace("key1", "oldValue", "newValue");  // 只有旧值匹配才替换
-
-// 计算操作
-map.compute("key1", (k, v) -> v == null ? "1" : String.valueOf(Integer.parseInt(v) + 1));
-map.computeIfAbsent("key1", k -> "defaultValue");
-map.computeIfPresent("key1", (k, v) -> v + "_updated");
-
-// 合并操作
-map.merge("key1", "1", (oldVal, newVal) -> String.valueOf(Integer.parseInt(oldVal) + Integer.parseInt(newVal)));
-```
-
-**使用场景**：
-- 高并发读写的缓存
-- 多线程共享的配置数据
-- 统计计数（替代同步的HashMap）
-
-**性能特点**：
-- 读操作无锁（比Hashtable快）
-- 写操作采用分段锁（JDK 1.8后改为CAS+synchronized）
-- 不允许null键和null值
-
-### CopyOnWriteArrayList（线程安全的List）
-
-```java
-import java.util.concurrent.CopyOnWriteArrayList;
-
-CopyOnWriteArrayList<String> list = new CopyOnWriteArrayList<>();
-
-// 添加元素
-list.add("item1");
-list.add(0, "item0");
-list.addAll(Arrays.asList("item2", "item3"));
-
-// 读取元素
-String item = list.get(0);
-int size = list.size();
-
-// 遍历（不会抛ConcurrentModificationException）
-for (String s : list) {
-    System.out.println(s);
-}
-
-// 删除元素
-list.remove("item1");
-list.remove(0);
-```
-
-**使用场景**：
-- 读多写少的场景（如事件监听器列表）
-- 需要遍历时不加锁的场景
-- 白名单/黑名单配置
-
-**性能特点**：
-- 读操作无锁，性能高
-- 写操作复制整个数组，开销大
-- 适合小数据量、读多写少
-
-**⚠️ 注意事项**：
-```java
-// ❌ 不适合频繁写入
-for (int i = 0; i < 10000; i++) {
-    list.add("item" + i);  // 每次都复制数组
-}
-
-// ✅ 批量写入
-list.addAll(Arrays.asList(...));  // 只复制一次
-```
-
-### CopyOnWriteArraySet（线程安全的Set）
-
-```java
-import java.util.concurrent.CopyOnWriteArraySet;
-
-CopyOnWriteArraySet<String> set = new CopyOnWriteArraySet<>();
-
-set.add("item1");
-set.add("item2");
-set.add("item1");  // 重复元素，不会添加
-
-boolean contains = set.contains("item1");
-set.remove("item1");
-```
-
-**使用场景**：
-- 需要去重的订阅者列表
-- 缓存的标签集合
-
-**性能特点**：同CopyOnWriteArrayList
-
-### 阻塞队列（BlockingQueue）
-
-#### LinkedBlockingQueue（链表阻塞队列）
-
-```java
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-
-// 无界队列（容量Integer.MAX_VALUE）
-LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();
-
-// 有界队列
-LinkedBlockingQueue<String> boundedQueue = new LinkedBlockingQueue<>(100);
-
-// 生产者
-queue.put("item1");  // 队列满时阻塞等待
-boolean added = queue.offer("item2");  // 队列满时返回false
-queue.offer("item3", 5, TimeUnit.SECONDS);  // 队列满时等待5秒
-
-// 消费者
-String item = queue.take();  // 队列空时阻塞等待
-String item2 = queue.poll();  // 队列空时返回null
-String item3 = queue.poll(5, TimeUnit.SECONDS);  // 队列空时等待5秒
-
-// 查看但不移除
-String peek = queue.peek();
-```
-
-**使用场景**：
-- 生产者-消费者模式
-- 线程池的任务队列
-- 异步处理队列
-
-#### ArrayBlockingQueue（数组阻塞队列）
-
-```java
-import java.util.concurrent.ArrayBlockingQueue;
-
-// 必须指定容量
-ArrayBlockingQueue<String> queue = new ArrayBlockingQueue<>(100);
-
-// 支持公平模式（按等待时间排队）
-ArrayBlockingQueue<String> fairQueue = new ArrayBlockingQueue<>(100, true);
-
-queue.put("item");
-String item = queue.take();
-```
-
-**对比**：
-- `LinkedBlockingQueue`：链表实现，默认无界，吞吐量高
-- `ArrayBlockingQueue`：数组实现，必须有界，内存占用小
-
-#### PriorityBlockingQueue（优先级队列）
-
-```java
-import java.util.concurrent.PriorityBlockingQueue;
-
-// 自然排序
-PriorityBlockingQueue<Integer> queue = new PriorityBlockingQueue<>();
-queue.put(3);
-queue.put(1);
-queue.put(2);
-System.out.println(queue.take());  // 输出 1
-
-// 自定义排序
-PriorityBlockingQueue<Task> taskQueue = new PriorityBlockingQueue<>(
-    10, 
-    Comparator.comparingInt(Task::getPriority).reversed()
-);
-```
-
-**使用场景**：
-- 任务调度（按优先级执行）
-- 延迟任务处理
-
-#### DelayQueue（延迟队列）
-
-```java
-import java.util.concurrent.*;
-
-// 元素必须实现Delayed接口
-class DelayedTask implements Delayed {
-    private String name;
-    private long executeTime;  // 执行时间（毫秒）
-    
-    public DelayedTask(String name, long delayMs) {
-        this.name = name;
-        this.executeTime = System.currentTimeMillis() + delayMs;
-    }
-    
-    @Override
-    public long getDelay(TimeUnit unit) {
-        long diff = executeTime - System.currentTimeMillis();
-        return unit.convert(diff, TimeUnit.MILLISECONDS);
-    }
-    
-    @Override
-    public int compareTo(Delayed o) {
-        return Long.compare(this.executeTime, ((DelayedTask) o).executeTime);
-    }
-}
-
-// 使用
-DelayQueue<DelayedTask> queue = new DelayQueue<>();
-queue.put(new DelayedTask("task1", 3000));  // 3秒后执行
-queue.put(new DelayedTask("task2", 1000));  // 1秒后执行
-
-DelayedTask task = queue.take();  // 阻塞直到有任务到期
-```
-
-**使用场景**：
-- 订单超时取消
-- 会话过期清理
-- 定时任务调度
-
-#### SynchronousQueue（同步队列）
-
-```java
-import java.util.concurrent.SynchronousQueue;
-
-SynchronousQueue<String> queue = new SynchronousQueue<>();
-
-// 生产者线程
-new Thread(() -> {
-    try {
-        queue.put("item");  // 阻塞直到有消费者take
-        System.out.println("Item delivered");
-    } catch (InterruptedException e) {
-        e.printStackTrace();
-    }
-}).start();
-
-// 消费者线程
-new Thread(() -> {
-    try {
-        String item = queue.take();  // 阻塞直到有生产者put
-        System.out.println("Received: " + item);
-    } catch (InterruptedException e) {
-        e.printStackTrace();
-    }
-}).start();
-```
-
-**使用场景**：
-- 线程间直接传递数据
-- Executors.newCachedThreadPool()的内部实现
-
-### ConcurrentLinkedQueue（非阻塞队列）
-
-```java
-import java.util.concurrent.ConcurrentLinkedQueue;
-
-ConcurrentLinkedQueue<String> queue = new ConcurrentLinkedQueue<>();
-
-// 添加元素
-queue.offer("item1");
-queue.add("item2");
-
-// 获取并移除元素
-String item = queue.poll();  // 队列空时返回null
-
-// 查看但不移除
-String peek = queue.peek();
-
-// 不支持阻塞操作
-```
-
-**使用场景**：
-- 不需要阻塞的高并发队列
-- 消息缓冲区
-
-**对比**：
-- `ConcurrentLinkedQueue`：非阻塞，使用CAS，性能高
-- `LinkedBlockingQueue`：阻塞，使用锁，支持等待
-
-### 实战示例
-
-#### 示例1：生产者-消费者（订单处理）
-
-```java
-@Component
-public class OrderProcessor {
-    
-    private final BlockingQueue<Order> orderQueue = new LinkedBlockingQueue<>(1000);
-    private final ExecutorService consumerPool = Executors.newFixedThreadPool(5);
-    
-    @PostConstruct
-    public void init() {
-        // 启动5个消费者线程
-        for (int i = 0; i < 5; i++) {
-            consumerPool.submit(() -> {
-                while (!Thread.currentThread().isInterrupted()) {
-                    try {
-                        Order order = orderQueue.take();
-                        processOrder(order);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            });
-        }
-    }
-    
-    // 生产者：接收订单
-    public boolean submitOrder(Order order) {
-        try {
-            return orderQueue.offer(order, 5, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            return false;
-        }
-    }
-    
-    // 消费者：处理订单
-    private void processOrder(Order order) {
-        log.info("Processing order: {}", order.getId());
-        // 处理逻辑...
-    }
-}
-```
-
-#### 示例2：延迟任务（订单超时取消）
-
-```java
-@Component
-public class OrderTimeoutManager {
-    
-    private final DelayQueue<DelayedOrder> delayQueue = new DelayQueue<>();
-    
-    static class DelayedOrder implements Delayed {
-        private Long orderId;
-        private long expireTime;
-        
-        public DelayedOrder(Long orderId, long delayMs) {
-            this.orderId = orderId;
-            this.expireTime = System.currentTimeMillis() + delayMs;
-        }
-        
-        @Override
-        public long getDelay(TimeUnit unit) {
-            return unit.convert(expireTime - System.currentTimeMillis(), TimeUnit.MILLISECONDS);
-        }
-        
-        @Override
-        public int compareTo(Delayed o) {
-            return Long.compare(this.expireTime, ((DelayedOrder) o).expireTime);
-        }
-    }
-    
-    @PostConstruct
-    public void init() {
-        // 启动取消任务线程
-        new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    DelayedOrder order = delayQueue.take();
-                    cancelOrder(order.orderId);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }).start();
-    }
-    
-    // 添加超时订单
-    public void addOrderTimeout(Long orderId, long timeoutMs) {
-        delayQueue.put(new DelayedOrder(orderId, timeoutMs));
-    }
-    
-    // 取消超时订单
-    private void cancelOrder(Long orderId) {
-        log.info("Cancelling timeout order: {}", orderId);
-        // 取消逻辑...
-    }
-}
-```
-
-#### 示例3：缓存实现（ConcurrentHashMap）
-
-```java
-@Component
-public class ProductCache {
-    
-    private final ConcurrentHashMap<Long, Product> cache = new ConcurrentHashMap<>();
-    
-    @Autowired
-    private ProductMapper productMapper;
-    
-    // 获取商品（缓存不存在则查库）
-    public Product getProduct(Long id) {
-        return cache.computeIfAbsent(id, k -> {
-            log.info("Cache miss, loading from DB: {}", k);
-            return productMapper.selectByPrimaryKey(k);
-        });
-    }
-    
-    // 更新商品（同时更新缓存）
-    public void updateProduct(Product product) {
-        productMapper.updateByPrimaryKey(product);
-        cache.put(product.getId(), product);
-    }
-    
-    // 删除商品（同时删除缓存）
-    public void deleteProduct(Long id) {
-        productMapper.deleteByPrimaryKey(id);
-        cache.remove(id);
-    }
-    
-    // 批量预加载
-    public void preload(List<Long> ids) {
-        List<Product> products = productMapper.selectByIds(ids);
-        products.forEach(p -> cache.put(p.getId(), p));
-    }
-    
-    // 清空缓存
-    public void clear() {
-        cache.clear();
-    }
-}
-```
-
-#### 示例4：计数器（ConcurrentHashMap）
-
-```java
-@Component
-public class PageViewCounter {
-    
-    private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
-    
-    // 增加计数
-    public long increment(String page) {
-        return counters.computeIfAbsent(page, k -> new AtomicLong())
-                       .incrementAndGet();
-    }
-    
-    // 获取计数
-    public long getCount(String page) {
-        AtomicLong counter = counters.get(page);
-        return counter != null ? counter.get() : 0;
-    }
-    
-    // 获取所有计数
-    public Map<String, Long> getAllCounts() {
-        Map<String, Long> result = new HashMap<>();
-        counters.forEach((k, v) -> result.put(k, v.get()));
-        return result;
-    }
-    
-    // 重置计数
-    public void reset(String page) {
-        counters.remove(page);
-    }
-}
-```
-
-### 性能对比
-
-| 集合类型 | 读性能 | 写性能 | 适用场景 |
-|---------|--------|--------|----------|
-| ConcurrentHashMap | 高 | 高 | 高并发读写 |
-| CopyOnWriteArrayList | 极高 | 低 | 读多写少 |
-| LinkedBlockingQueue | 中 | 中 | 生产消费 |
-| ConcurrentLinkedQueue | 高 | 高 | 非阻塞队列 |
-
-### 最佳实践
-
-```java
-// ✅ 根据场景选择合适的集合
-// 高并发缓存
-ConcurrentHashMap<String, Object> cache = new ConcurrentHashMap<>();
-
-// 监听器列表（读多写少）
-CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
-
-// 任务队列
-LinkedBlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>(1000);
-
-// ❌ 不要在循环中频繁写入CopyOnWriteArrayList
-for (int i = 0; i < 10000; i++) {
-    list.add("item" + i);  // 每次都复制数组
-}
-
-// ✅ 批量操作
-List<String> items = new ArrayList<>();
-for (int i = 0; i < 10000; i++) {
-    items.add("item" + i);
-}
-list.addAll(items);  // 只复制一次
-```
-
----
-
-## 10. CompletableFuture（异步编程）
-
-### 基本使用
+> Illustrative fragment
 
 ```java
 import java.util.concurrent.CompletableFuture;
 
-// 异步执行（无返回值）
-CompletableFuture<Void> future1 = CompletableFuture.runAsync(() -> {
-    System.out.println("Task running");
+// 无返回值（类似 Runnable）
+CompletableFuture<Void> log = CompletableFuture.runAsync(() -> {
+    writeLog("请求已处理");
 });
 
-// 异步执行（有返回值）
-CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> {
-    return "Result";
-});
-
-// 获取结果
-String result = future2.get();  // 阻塞
-String result2 = future2.join();  // 阻塞（不抛受检异常）
-```
-
-### 链式调用
-
-```java
-CompletableFuture.supplyAsync(() -> {
-    return "Hello";
-})
-.thenApply(s -> s + " World")  // 转换
-.thenAccept(System.out::println)  // 消费
-.exceptionally(ex -> {  // 异常处理
-    System.err.println("Error: " + ex.getMessage());
-    return null;
+// 有返回值（类似 Callable）
+CompletableFuture<String> user = CompletableFuture.supplyAsync(() -> {
+    return userService.getById(userId);     // 返回类型自动推断
 });
 ```
 
-### 组合多个异步任务
+默认使用 `ForkJoinPool.commonPool()`。生产环境建议传入自定义线程池，避免和系统其他异步任务争用：
 
 ```java
-CompletableFuture<String> future1 = CompletableFuture.supplyAsync(() -> "Task1");
-CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> "Task2");
-
-// allOf：等待所有任务完成
-CompletableFuture<Void> allFuture = CompletableFuture.allOf(future1, future2);
-allFuture.join();
-
-// anyOf：等待任意一个完成
-CompletableFuture<Object> anyFuture = CompletableFuture.anyOf(future1, future2);
-Object result = anyFuture.join();
+CompletableFuture.supplyAsync(() -> callApi(), myExecutor);
 ```
 
----
+### 获取结果：join() 优于 get()
 
-## 11. 实战示例
-
-### 示例1：并发查询商品
+> Illustrative fragment
 
 ```java
-@Service
-public class ProductService {
-    
-    @Autowired
-    private ProductMapper productMapper;
-    
-    private ExecutorService executor = Executors.newFixedThreadPool(10);
-    
-    public List<Product> batchQuery(List<Long> ids) {
-        List<CompletableFuture<Product>> futures = ids.stream()
-            .map(id -> CompletableFuture.supplyAsync(() -> {
-                return productMapper.selectByPrimaryKey(id);
-            }, executor))
-            .collect(Collectors.toList());
-        
-        return futures.stream()
-            .map(CompletableFuture::join)
-            .collect(Collectors.toList());
-    }
-}
+// get() — Future 接口方法，抛受检异常，强制 try-catch
+String s = future.get();        // throws InterruptedException, ExecutionException
+
+// join() — CompletableFuture 自身方法，抛非受检异常
+String s = future.join();       // 异常包装为 CompletionException，链式调用中更自然
 ```
 
-### 示例2：定时清理过期数据
+在链式流程中，`join()` 让异常处理更简洁——你可以在末尾统一用 `exceptionally()` 捕获，不需要每一步都 try-catch。
+
+### 链式编排：thenApply / thenCompose / thenAccept
+
+这是 `CompletableFuture` 区别于传统阻塞编程的核心能力。每一步是对上一步结果的转换，整个链条描述了"先做什么、再做什么"的依赖关系，框架负责在线程间调度。
+
+> Illustrative fragment
 
 ```java
-@Component
-public class CleanupTask {
-    
-    @Autowired
-    private OrderMapper orderMapper;
-    
-    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-    
-    @PostConstruct
-    public void init() {
-        // 每天凌晨2点执行
-        long initialDelay = getDelayToNextRun();
-        scheduler.scheduleAtFixedRate(() -> {
-            cleanup();
-        }, initialDelay, TimeUnit.DAYS.toSeconds(1), TimeUnit.SECONDS);
-    }
-    
-    private void cleanup() {
-        log.info("开始清理过期订单");
-        LocalDateTime expireTime = LocalDateTime.now().minusDays(30);
-        int count = orderMapper.deleteExpired(expireTime);
-        log.info("清理完成，删除{}条记录", count);
-    }
-    
-    private long getDelayToNextRun() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime nextRun = now.withHour(2).withMinute(0).withSecond(0);
-        if (now.isAfter(nextRun)) {
-            nextRun = nextRun.plusDays(1);
-        }
-        return Duration.between(now, nextRun).getSeconds();
-    }
-}
+CompletableFuture
+    .supplyAsync(() -> orderService.findById(orderId))      // 1. 查订单
+    .thenApply(order -> pricingService.calculate(order))    // 2. 算价格（同步转换）
+    .thenCompose(price -> paymentService.payAsync(price))   // 3. 支付（返回新 CF，扁平化）
+    .thenAccept(receipt -> notifyService.send(receipt))     // 4. 通知（终结操作）
+    .exceptionally(ex -> {                                   // 5. 异常恢复
+        log.error("订单处理失败", ex);
+        return null;
+    });
 ```
 
----
+**`thenApply` vs `thenCompose`**：如果回调返回普通值，用 `thenApply`；如果回调返回另一个 `CompletableFuture`，用 `thenCompose`，否则你会得到 `CompletableFuture<CompletableFuture<T>>` 的嵌套。
 
-## 12. 最佳实践
+### 组合多个任务
 
-### 1. 优先使用线程池
-
-```java
-// ✅ 使用线程池
-ExecutorService executor = Executors.newFixedThreadPool(10);
-executor.submit(() -> { /* task */ });
-
-// ❌ 频繁创建线程
-new Thread(() -> { /* task */ }).start();
-```
-
-### 2. 自定义线程池参数
+> Illustrative fragment
 
 ```java
-// ✅ 根据业务场景自定义
-ThreadPoolExecutor executor = new ThreadPoolExecutor(
-    10, 20, 60L, TimeUnit.SECONDS,
-    new LinkedBlockingQueue<>(100),
-    new ThreadPoolExecutor.CallerRunsPolicy()
+var userFuture = CompletableFuture.supplyAsync(() -> getUser());
+var orderFuture = CompletableFuture.supplyAsync(() -> getOrders());
+
+// 两者都完成后再组合结果
+var summary = userFuture.thenCombine(orderFuture, (user, orders) ->
+    "用户 %s, 共 %d 笔订单".formatted(user.name(), orders.size())
 );
 
-// ❌ 使用 Executors（可能OOM）
-ExecutorService executor = Executors.newFixedThreadPool(10);
+// allOf: 等待全部完成（返回 CompletableFuture<Void>）
+CompletableFuture.allOf(userFuture, orderFuture).join();
+
+// anyOf: 任意一个完成即可（返回 CompletableFuture<Object>）
+Object first = CompletableFuture.anyOf(userFuture, orderFuture).join();
 ```
 
-### 3. 正确关闭线程池
+### 权衡
+
+使用 `CompletableFuture` 最大的陷阱不是 API 用错，而是**忘记指定线程池**。默认的 `ForkJoinPool.commonPool()` 是全局共享的——如果你的异步任务里有阻塞操作（数据库查询、HTTP 调用），会耗尽公共池的线程，拖慢整个 JVM 里所有其他 `CompletableFuture`。
+
+正确做法：
 
 ```java
-executor.shutdown();  // 等待任务完成
-if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-    executor.shutdownNow();  // 强制关闭
-}
+// 为阻塞型异步任务创建专用线程池
+ExecutorService ioPool = Executors.newFixedThreadPool(10);
+CompletableFuture.supplyAsync(() -> dbQuery(), ioPool);
 ```
 
-### 4. 避免死锁
+另外，`CompletableFuture` 适合"一个请求需要组合多个远程调用"的场景。如果业务逻辑本身是同步的（比如单表 CRUD），引入异步反而增加心智负担，不值得。
 
-```java
-// 多个锁按固定顺序获取
-synchronized (lock1) {
-    synchronized (lock2) {
-        // ...
-    }
-}
-```
+> 到这里，你已经走完了从互斥到异步编排的整条链。最后一节把各工具放到一起对比，帮你建立快速选型直觉。
 
 ---
 
-## 下一步
+## 8. 场景速查与下一步
 
-- **[01-10-常用工具类库.md](./01-10-常用工具类库.md)** - 工具类库
+### 工具选择
+
+| 你的场景                  | 用这个                              | 原因                           |
+| ------------------------- | ----------------------------------- | ------------------------------ |
+| 保护一段代码不被并发执行  | `synchronized`                      | 最简单，JVM 会自动优化         |
+| 开关 / 标志位，多线程可见 | `volatile`                          | 最轻量的可见性保证             |
+| 需要 tryLock、超时放弃    | `ReentrantLock`                     | `synchronized` 不支持          |
+| 读多写少的缓存            | `ReentrantReadWriteLock`            | 读操作可并行                   |
+| 生产环境管理线程          | `ThreadPoolExecutor`                | 有界队列防 OOM                 |
+| 高并发计数器              | `LongAdder`                         | 分散热点，比 `AtomicLong` 更快 |
+| 单个变量 CAS 更新         | `AtomicInteger` / `AtomicReference` | 精确 CAS 控制                  |
+| 编排多个异步调用          | `CompletableFuture`                 | 声明式链式，替代阻塞等待       |
+
+### 学习路径
+
+这篇指南覆盖的是 JDK 17 下的多线程基础——它们是理解更高级并发工具的前提。建议先熟练这条链（synchronized → volatile → Lock → 线程池 → 原子类 → CompletableFuture），再进入以下方向：
+
+- **JMM 深入**：happens-before 规则、final 字段语义——理解编译器重排序如何影响你的代码
+- **ForkJoinPool**：工作窃取算法，`parallelStream()` 的底层引擎
+- **JDK 21+ 虚拟线程**：`Thread.startVirtualThread()`，高吞吐 I/O 的新范式——当你理解了传统线程的代价，才能真正理解虚拟线程的价值
+- **结构化并发**（JDK 21 incubator）：管理虚拟线程的生命周期边界
+- **响应式编程**（WebFlux / RxJava）：背压和事件流——区别于 `CompletableFuture` 的请求-响应模式
+
+> **原则**：当前这条链就是你的锚点。虚拟线程和响应式是这条链的延伸，不是替代。
 
 ---
 
-## 快速参考
+## References
 
-```java
-// 创建线程
-Thread thread = new Thread(() -> {
-    System.out.println("Task");
-});
-thread.start();
-
-// 线程池
-ExecutorService executor = Executors.newFixedThreadPool(10);
-executor.submit(() -> { /* task */ });
-executor.shutdown();
-
-// 同步
-public synchronized void method() { }
-synchronized (lock) { /* code */ }
-
-// Lock
-Lock lock = new ReentrantLock();
-lock.lock();
-try {
-    // code
-} finally {
-    lock.unlock();
-}
-
-// CompletableFuture
-CompletableFuture.supplyAsync(() -> "Result")
-    .thenApply(s -> s.toUpperCase())
-    .thenAccept(System.out::println);
-```
+- [The Java Language Specification, Java SE 17 Edition — Chapter 17: Threads and Locks](https://docs.oracle.com/javase/specs/jls/se17/html/jls-17.html)
+- [java.util.concurrent 包文档 (Java 17)](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/concurrent/package-summary.html)
+- [JEP 444: Virtual Threads](https://openjdk.org/jeps/444) — JDK 21 虚拟线程规范
+- Bloch, J. _Effective Java_, 3rd Edition — Item 78–84 并发章节
