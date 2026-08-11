@@ -310,6 +310,15 @@ if (lock.tryLock(1, TimeUnit.SECONDS)) {
     try { doWork(); }
     finally { lock.unlock(); }
 }
+
+// 可中断：等锁期间响应 interrupt()
+try {
+    lock.lockInterruptibly();       // 收到中断信号就抛异常，否则尝试获取锁，如果拿不到？→ 阻塞等待，但保持对中断信号的响应
+    try { doWork(); }
+    finally { lock.unlock(); }
+} catch (InterruptedException e) {
+    // 等锁时被中断，可以优雅退出
+}
 ```
 
 ### ReentrantReadWriteLock：读写分离
@@ -329,12 +338,14 @@ public class ConfigCache {
     private final Map<String, String> cache = new HashMap<>();
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
 
+    // 读操作（多个线程可同时读）
     public String get(String key) {
         rwLock.readLock().lock();
         try { return cache.get(key); }
         finally { rwLock.readLock().unlock(); }
     }
 
+    // 写操作（独占）
     public void put(String key, String value) {
         rwLock.writeLock().lock();
         try { cache.put(key, value); }
@@ -423,16 +434,142 @@ ThreadPoolExecutor executor = new ThreadPoolExecutor(
 | `DiscardPolicy`       | 静默丢弃                        | 日志等非关键任务 |
 | `DiscardOldestPolicy` | 丢弃队列头部（最旧的）          | 优先保证最新数据 |
 
-线程池需要优雅关闭——直接 `kill` 进程会让正在执行的任务中断。
+#### 提交任务：execute vs submit
+
+线程池接收任务的入口有两个核心方法，选错可能让你丢失异常信息：
+
+| 方法                         | 参数                  | 返回值      | 异常处理                                                                |
+| ---------------------------- | --------------------- | ----------- | ----------------------------------------------------------------------- |
+| `execute(Runnable)`          | Runnable              | void        | 未捕获的异常由线程的 `UncaughtExceptionHandler` 处理，默认打印到 stderr |
+| `submit(Callable<T>)`        | Callable              | `Future<T>` | 异常被包装进 Future，调用 `future.get()` 时以 `ExecutionException` 抛出 |
+| `submit(Runnable)`           | Runnable              | `Future<?>` | 同上                                                                    |
+| `submit(Runnable, T result)` | Runnable + 预设返回值 | `Future<T>` | 同上，任务成功时 `get()` 返回预设值                                     |
+
+**关键区别**：`execute` 提交的任务如果抛出异常，异常会直接扩散到线程的 `UncaughtExceptionHandler`；`submit` 会把异常吞掉，必须通过 `future.get()` 才能捕获。
 
 > Illustrative fragment
 
 ```java
-executor.shutdown();        // 停止接收新任务，已提交的执行完
-if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-    executor.shutdownNow(); // 超时则强制终止
+// execute: 无返回值，异常直接暴露
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    5, 10, 60L, TimeUnit.SECONDS,
+    new LinkedBlockingQueue<>(100),
+    new ThreadPoolExecutor.AbortPolicy()
+);
+
+executor.execute(() -> {
+    System.out.println("执行任务，不需返回值");
+});
+
+// submit + Callable: 有返回值，异常包装在 Future 中
+Future<Integer> future = executor.submit(() -> {
+    Thread.sleep(1000);
+    return 42;
+});
+
+// 阻塞等待结果，抛异常时会包装为 ExecutionException
+Integer result = future.get();
+
+// submit + Runnable: 只关心任务是否完成
+Future<?> done = executor.submit(() -> doWork());
+done.get();  // 完成返回 null，异常则抛 ExecutionException
+```
+
+`Future.get()` 支持超时等待，避免无限阻塞：
+
+```java
+try {
+    Integer result = future.get(5, TimeUnit.SECONDS);  // 最多等 5 秒
+} catch (TimeoutException e) {
+    future.cancel(true);       // 超时取消，内部调用 interrupt()
 }
 ```
+
+#### 批量任务：invokeAll 与 invokeAny
+
+`ThreadPoolExecutor` 继承自 `AbstractExecutorService`，还提供了两个批量方法：
+
+| 方法                                 | 行为                                                 |
+| ------------------------------------ | ---------------------------------------------------- |
+| `invokeAll(Collection<Callable<T>>)` | 提交所有任务，**等全部完成**后返回 `List<Future<T>>` |
+| `invokeAny(Collection<Callable<T>>)` | 提交所有任务，**任一完成**即返回其结果，其余取消     |
+
+```java
+// invokeAll: 并行计算各月营收，等全部完成后汇总
+List<Callable<Integer>> tasks = Arrays.asList(
+    () -> calculateMonthlyRevenue(1),   // 1 月
+    () -> calculateMonthlyRevenue(2),   // 2 月
+    () -> calculateMonthlyRevenue(3)    // 3 月
+);
+List<Future<Integer>> results = executor.invokeAll(tasks);
+for (Future<Integer> f : results) {
+    total += f.get();
+}
+
+// invokeAny: 从多个数据源取，谁先返回就用谁
+String data = executor.invokeAny(Arrays.asList(
+    () -> fetchFromPrimaryDB(),         // 主数据库
+    () -> fetchFromCache(),             // 缓存
+    () -> fetchFromBackupAPI()          // 备用接口
+));
+```
+
+#### 线程池的关闭：shutdown vs shutdownNow
+
+线程池不会自动关闭——即使你忘了调用 `shutdown()`，JVM 也不会退出（因为线程池的工作线程是非守护线程）。关闭的核心流程如下：
+
+| 方法                        | 行为                                                                      |
+| --------------------------- | ------------------------------------------------------------------------- |
+| `shutdown()`                | 平缓关闭：拒绝新任务，但**等待已提交的（运行中的 + 队列里的）全部执行完** |
+| `shutdownNow()`             | 强制关闭：拒绝新任务，**中断所有正在运行的线程**，返回队列中未执行的任务  |
+| `awaitTermination(n, unit)` | 阻塞当前线程，等待线程池完成关闭，超时返回 `false`                        |
+| `isShutdown()`              | 是否已调用过 `shutdown()` 或 `shutdownNow()`                              |
+| `isTerminated()`            | `shutdown()` 后所有任务是否已执行完毕                                     |
+
+`shutdown()` vs `shutdownNow()` 的区别：
+
+```
+shutdown():
+  接收新任务 → 拒绝 ✓
+  运行中的任务 → 继续执行 ✓
+  队列中的任务 → 继续执行 ✓
+
+shutdownNow():
+  接收新任务 → 拒绝 ✓
+  运行中的任务 → 调用 interrupt() 中断 ✗
+  队列中的任务 → 丢弃，作为 List 返回 ✗
+```
+
+**注意**：`shutdownNow()` 通过 `interrupt()` 来中断线程，所以运行的**任务代码必须响应中断**（检查 `isInterrupted()` 或捕获 `InterruptedException`），否则线程不会真正停止。回到 §1 中 interrupt 的理念：协作而非强制。
+
+> Illustrative fragment
+
+```java
+// 标准关闭流程：先尝试优雅关闭，超时再强制
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    5, 10, 60L, TimeUnit.SECONDS,
+    new LinkedBlockingQueue<>(100),
+    new ThreadPoolExecutor.AbortPolicy()
+);
+
+// 提交任务...
+executor.execute(() -> doWork());
+
+// 步骤一：拒绝新任务，等待已提交的执行完
+executor.shutdown();
+
+// 步骤二：最多等 60 秒
+if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+    // 步骤三：超时，强制终止
+    List<Runnable> abandoned = executor.shutdownNow();
+    // 步骤四：再给 10 秒善后
+    if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        // 极端情况：任务不响应中断，线程僵死
+    }
+}
+```
+
+实际项目中这个关闭逻辑通常放在 `@PreDestroy` 或 Spring 的 `DisposableBean.destroy()` 中，由框架在应用停止时自动调用。
 
 ### 权衡：线程数量怎么定
 
