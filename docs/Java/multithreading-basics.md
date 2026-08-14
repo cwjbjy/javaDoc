@@ -693,25 +693,87 @@ CompletableFuture<String> user = CompletableFuture.supplyAsync(() -> {
 });
 ```
 
-默认使用 `ForkJoinPool.commonPool()`。生产环境建议传入自定义线程池，避免和系统其他异步任务争用：
+#### 第二个参数：指定执行线程池
+
+`runAsync` 和 `supplyAsync` 都有一个带第二个参数 `Executor` 的重载，用来指定任务在哪个线程池上执行：
+
+| 方法                                 | 任务执行位置                |
+| ------------------------------------ | --------------------------- |
+| `runAsync(Runnable)`                 | `ForkJoinPool.commonPool()` |
+| `runAsync(Runnable, Executor)`       | 指定线程池                  |
+| `supplyAsync(Supplier<T>)`           | `ForkJoinPool.commonPool()` |
+| `supplyAsync(Supplier<T>, Executor)` | 指定线程池                  |
+
+`Executor` 是一个极简接口（只有一个 `execute(Runnable)` 方法）——§5 构造的 `ThreadPoolExecutor` 就实现了它，那里学到的有界队列配置可以直接复用：
 
 ```java
-CompletableFuture.supplyAsync(() -> callApi(), myExecutor);
+CompletableFuture.supplyAsync(() -> callApi(), ioPool);   // ioPool：§5 的有界 ThreadPoolExecutor
 ```
 
-### 获取结果：join() 优于 get()
+不传第二个参数时，默认使用 `ForkJoinPool.commonPool()`。这个公共池有三个特点值得记住：
+
+1. **并行度小**：约等于 CPU 核数 − 1（最少 1 个）——它是为短小计算任务设计的，不是为阻塞 I/O 设计的
+2. **线程是守护线程**：当 JVM 里只剩 commonPool 的工作线程时，进程会直接退出，没跑完的异步任务随之消失
+3. **全局共享**：`parallelStream()` 和整个 JVM 里所有未指定线程池的 `CompletableFuture` 都挤在这一个池里，阻塞任务会拖累所有人
+
+所以生产环境里，涉及阻塞操作（数据库、HTTP）的异步任务一律传入 §5 那样配置的有界 `ThreadPoolExecutor`；commonPool 只留给计算密集的短任务。
+
+### completedFuture：包装已有结果
+
+有时结果已经算好了，不需要再启动异步任务，但调用方期望的是一个 `CompletableFuture`——例如在 Spring `@Async` 方法中作为返回值。
 
 > Illustrative fragment
 
 ```java
-// get() — Future 接口方法，抛受检异常，强制 try-catch
-String s = future.get();        // throws InterruptedException, ExecutionException
+// 创建一个已经完成的 Future，内部直接持有结果
+CompletableFuture<String> done = CompletableFuture.completedFuture("hello");
 
-// join() — CompletableFuture 自身方法，抛非受检异常
-String s = future.join();       // 异常包装为 CompletionException，链式调用中更自然
+done.isDone();  // true —— 无需等待
+done.join();    // "hello" —— 立即返回，不阻塞
 ```
 
-在链式流程中，`join()` 让异常处理更简洁——你可以在末尾统一用 `exceptionally()` 捕获，不需要每一步都 try-catch。
+`completedFuture()` 和 `supplyAsync()` 的核心区别：
+
+| 方法                        | 行为                                                  |
+| --------------------------- | ----------------------------------------------------- |
+| `supplyAsync(() -> work())` | 将任务提交到线程池，异步执行，返回**未完成**的 Future |
+| `completedFuture(result)`   | 不执行任何代码，返回**已完成**、已持有结果的 Future   |
+
+典型场景是 `@Async` 方法——代码已在异步线程上执行完毕，只需把结果包装成 `CompletableFuture` 返回给调用方继续链式编排：
+
+```java
+@Async
+public CompletableFuture<ReportResult> generate(String reportId) {
+    ReportResult result = buildReport(reportId);       // 已在异步线程执行完毕
+    return CompletableFuture.completedFuture(result);  // 包装即可，无需再 supplyAsync
+}
+```
+
+> JDK 9 还提供了 `failedFuture(Throwable)`，返回一个已完成但以异常结束的 Future，适合在异常处理中保持链式风格。
+
+### 获取结果：join()
+
+```java
+// join() — 终止操作，阻塞等待 CompletableFuture 完成，返回计算结果
+String s = future.join();
+```
+
+`join()` 返回 `T` 而非 `CompletableFuture<T>`，是**终止操作**——不能在其后链式调用 `exceptionally()`。正确做法是把 `exceptionally()` 放在 `join()` 之前，让它把异常完成转为正常完成，`join()` 就能拿到兜底值：
+
+```java
+String result = future
+    .exceptionally(ex -> {          // 先处理异常：将失败转为兜底值
+        log.error("任务失败", ex);
+        return "default";
+    })
+    .join();                        // 再获取结果：此时不会抛异常
+```
+
+如果不用 `exceptionally()` 兜底，`join()` 遇到异常完成时会抛出 `CompletionException`，此时只能在调用处 try-catch。
+
+> **何时需要 `join()`？** `join()` 的唯一作用是阻塞当前线程，把异步结果"拉回"同步世界——`String result = future.join()`。如果你不需要阻塞，完全可以用 `thenAccept(result -> { ... })` 在回调中消费结果，全程异步，连 `join()` 都不需要。
+
+> **注意**：`CompletableFuture.join()` 与 `Thread.join()` 同名但完全不同。`Thread.join()` 等待一个**线程**执行完毕，返回 `void`，抛 `InterruptedException`（受检）；`CompletableFuture.join()` 等待一个**异步任务**的计算结果，返回 `T`，抛 `CompletionException`（非受检）。前者是底层线程协调，后者是高层任务编排。
 
 ### 链式编排：thenApply / thenCompose / thenAccept
 
@@ -757,11 +819,15 @@ Object first = CompletableFuture.anyOf(userFuture, orderFuture).join();
 
 使用 `CompletableFuture` 最大的陷阱不是 API 用错，而是**忘记指定线程池**。默认的 `ForkJoinPool.commonPool()` 是全局共享的——如果你的异步任务里有阻塞操作（数据库查询、HTTP 调用），会耗尽公共池的线程，拖慢整个 JVM 里所有其他 `CompletableFuture`。
 
-正确做法：
+正确做法：给阻塞型任务专用线程池（参数含义见 §5，不要用 `Executors` 快捷工厂）：
 
 ```java
 // 为阻塞型异步任务创建专用线程池
-ExecutorService ioPool = Executors.newFixedThreadPool(10);
+ThreadPoolExecutor ioPool = new ThreadPoolExecutor(
+    2, 4, 60L, TimeUnit.SECONDS,
+    new LinkedBlockingQueue<>(100),
+    new ThreadPoolExecutor.CallerRunsPolicy()
+);
 CompletableFuture.supplyAsync(() -> dbQuery(), ioPool);
 ```
 
