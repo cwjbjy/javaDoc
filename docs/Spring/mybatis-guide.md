@@ -311,6 +311,34 @@ public class UserService {
 }
 ```
 
+在 Controller 中调用
+
+```java
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
+
+    @GetMapping("/{id}")
+    public User getUser(@PathVariable Long id) {
+        return userService.getById(id);  // 调用 Service，而非直接调用 Mapper
+    }
+}
+```
+
+而不是：
+
+````java
+// 不推荐：Controller 直接调用 Mapper
+@GetMapping("/user/{id}")
+public User getUser(@PathVariable Long id) {
+    return userMapper.selectById(id);  // ❌ 跳过了 Service 层
+}
 ---
 
 ## 3. SQL 映射基础
@@ -337,7 +365,7 @@ MyBatis 提供了两种参数占位方式，行为截然不同：
 <select id="selectAll" resultMap="BaseResultMap">
     SELECT * FROM user ORDER BY ${column} ${direction}
 </select>
-```
+````
 
 > **铁律**：能用 `#{}` 就用 `#{}`。只有表名、字段名、ORDER BY 排序方向等**不可能用预编译参数表示**的极少情况才用 `${}`，并且要确保值来自代码常量而非用户输入。
 
