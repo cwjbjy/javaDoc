@@ -1,0 +1,82 @@
+[
+  {
+    "query": "请把我们团队零散的 Kafka consumer 笔记重组为一篇面向后端新人的渐进式技术指南，重点讲清 rebalance 为什么发生，并保留可运行示例。",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a reference guide comparing Git reset, restore, revert, and rebase for engineers who already know basic commits. Make each section independently readable.",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我审查 docs/spring-security.md 的教学顺序。读者在看到 filter chain 图时还不知道 AuthenticationManager 是什么，我想把它改成真正适合入门的指南。",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn these rough notes about OAuth PKCE into a concise learning article for frontend developers. Separate illustrative pseudocode from runnable examples and flag facts that need source verification.",
+    "should_trigger": true
+  },
+  {
+    "query": "写一篇 Kubernetes 探针技术指南，适用 1.33，先比较三种 probe，再讲生产发布时如何组合，并核对官方文档。",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you design a learning path and accompanying guide that takes a Python developer from synchronous iteration to async generators without assuming they know event loops?",
+    "should_trigger": true
+  },
+  {
+    "query": "我们已有 auth-concepts.md 和 incident-runbook.md，请新写一篇 SSO 登录接入指南，避免跨文档重复但不要让示例断链。",
+    "should_trigger": true
+  },
+  {
+    "query": "Review this 2,000-word Redis tutorial for structure, audience fit, code-example honesty, and whether it should be a tutorial or reference guide.",
+    "should_trigger": true
+  },
+  {
+    "query": "给不写代码的产品经理做一篇 CAP 定理入门文章，重点是形成正确心智模型，不要为了模板硬塞代码。",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a migration guide from Spring Security 6 to 7 with current APIs, legacy-name annotations, official sources, and a reproducible verification section.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fix the typo in the installation paragraph of README.md and keep every other byte unchanged.",
+    "should_trigger": false
+  },
+  {
+    "query": "Generate an OpenAPI 3.1 specification from these controller annotations, including schemas and response codes.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write product-launch copy for our new observability dashboard. Make it energetic and focused on business value.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review this pull request for race conditions and leave line-level code-review comments.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add JSDoc comments to every exported function in src/cache.ts without changing behavior.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarize this Kubernetes guide into five bullets for a Slack announcement.",
+    "should_trigger": false
+  },
+  {
+    "query": "Translate docs/oauth.md from English to Chinese while preserving Markdown exactly.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create an ADR documenting why we selected PostgreSQL over DynamoDB, using our ADR-004 template.",
+    "should_trigger": false
+  },
+  {
+    "query": "Extract every code block from this tutorial and place them into separate source files.",
+    "should_trigger": false
+  },
+  {
+    "query": "Answer this one question: what HTTP status code means Too Many Requests?",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,107 @@
+{
+  "skill_name": "guide-writing",
+  "evals": [
+    {
+      "id": 1,
+      "name": "progressive-oauth-pkce",
+      "prompt": "Write a Chinese Markdown guide for frontend engineers who know HTTP but are new to OAuth 2.0. Explain the Authorization Code flow with PKCE as a causal, progressive tutorial in at most 1,200 Chinese characters. The renderer does not support Mermaid. Include one clearly labeled illustrative pseudocode fragment, not a falsely runnable program. The request is fully specified, so do not pause for outline approval.",
+      "expected_output": "A concise progressive guide that establishes the security problem before protocol mechanics, uses an ASCII flow only if useful, labels the pseudocode as illustrative, and proceeds without a clarification question.",
+      "files": [],
+      "expectations": [
+        "The response delivers the guide without asking the user to confirm a type or outline.",
+        "The guide explains the security problem before introducing PKCE protocol fields.",
+        "The guide stays concise and does not force a fixed three-step structure or multiple quick-reference tables.",
+        "The pseudocode is explicitly labeled as illustrative or non-runnable.",
+        "The response does not claim that the pseudocode was compiled or executed."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "reference-redis-data-types",
+      "prompt": "Create an English reference-style guide for experienced backend developers choosing among Redis String, Hash, List, Set, Sorted Set, and Stream. Organize parallel concepts so sections are independently readable, include a compact decision aid, and keep the main text under 1,500 words. Do not turn it into a beginner tutorial.",
+      "expected_output": "A parallel, independently navigable reference guide with a compact decision aid and no artificial causal progression.",
+      "files": [],
+      "expectations": [
+        "The guide uses a reference or taxonomy structure rather than forcing a causal tutorial.",
+        "Each Redis data type section can be read independently.",
+        "The decision aid compares selection criteria rather than merely listing commands.",
+        "The output respects the experienced audience and avoids re-teaching basic key-value concepts.",
+        "The output does not add unrelated framework-specific material."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "hybrid-kubernetes-probes",
+      "prompt": "Write a technical guide for Kubernetes 1.33 application owners that first compares readiness, liveness, and startup probes, then progressively explains a safe rollout configuration. Use version-sensitive claims only when supported by Kubernetes primary documentation. Include a verification summary that separates checked facts from anything not verified.",
+      "expected_output": "A hybrid guide that uses a reference comparison followed by a progressive rollout section, declares the target version, cites primary sources for mutable claims, and reports verification honestly.",
+      "files": [],
+      "expectations": [
+        "The output combines a parallel comparison with a local progressive rollout sequence.",
+        "The guide declares Kubernetes 1.33 as the target version.",
+        "Version-sensitive claims are tied to Kubernetes primary documentation or explicitly marked unverified.",
+        "The delivery includes a verification summary separate from the guide body.",
+        "The response does not fabricate execution or source-checking evidence."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "conceptual-cap-no-code",
+      "prompt": "为产品经理写一篇不超过 900 字的 CAP 定理技术入门。读者不写代码，重点是帮助其理解网络分区发生时为什么必须权衡一致性与可用性。不要包含代码示例；只有在关系确实更清楚时才使用一张小图。",
+      "expected_output": "A non-code conceptual guide tailored to product managers, with a clear mental model and no forced code or quick-reference appendix.",
+      "files": [],
+      "expectations": [
+        "The guide contains no code block.",
+        "The explanation is framed around product decisions rather than implementation APIs.",
+        "No diagram is used unless it materially clarifies the partition trade-off.",
+        "The output does not force a table of three to five quick-reference sections.",
+        "The guide remains within the requested compact scope."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "java-spring-versioned",
+      "prompt": "Create a Chinese guide for senior Java developers migrating an application to Spring Security 7. Explain the current security filter-chain mental model, distinguish current APIs from migration-only legacy names, and include one runnable minimal configuration with its required dependencies and verification command. Use official Spring sources for version-sensitive facts and provide a verification summary.",
+      "expected_output": "A version-aware Java/Spring guide that loads domain-specific guidance, separates current and legacy APIs, supplies a verified runnable example when execution is available or an honestly labeled unverified complete example otherwise, and reports evidence.",
+      "files": [],
+      "expectations": [
+        "The guide applies Java/Spring-specific conventions without presenting them as universal rules.",
+        "Current Spring Security 7 APIs are separated from legacy migration terminology.",
+        "The example is called verified runnable only when dependency resolution and its run or test command succeed; otherwise it is explicitly labeled complete but unverified.",
+        "Version-sensitive facts cite official Spring documentation or source.",
+        "The verification summary distinguishes executed checks from unverified claims."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "repo-aware-boundary",
+      "prompt": "Using the two existing documents supplied with this task, write `oauth-login-guide.md` for engineers implementing browser login. Avoid re-explaining the complete OAuth vocabulary already covered in `auth-concepts.md` and do not duplicate the provider runbook in `oauth-operations.md`. Preserve the minimum definitions and links needed for this new guide to remain understandable on its own.",
+      "expected_output": "A repo-aware operational guide that respects existing document boundaries while retaining enough local context to avoid a broken learning chain.",
+      "files": [
+        "evals/files/auth-concepts.md",
+        "evals/files/oauth-operations.md"
+      ],
+      "expectations": [
+        "The new guide links to both supplied documents at the points where deeper background or operations are needed.",
+        "The guide includes only the minimum local OAuth definitions required to follow browser login.",
+        "The guide does not reproduce the provider deployment or incident runbook.",
+        "The browser-login implementation path remains understandable without requiring hidden definitions.",
+        "The output explicitly states its scope and non-goals.",
+        "The Markdown structure validator passes, including a resolving table of contents when the guide has four or more H2 content sections."
+      ]
+    },
+    {
+      "id": 7,
+      "name": "spring-boot-4-http-client-freshness",
+      "prompt": "为 Spring Boot 4.0.6 团队写一篇中文 HTTP 客户端选型指南：一个库存查询是同步阻塞请求，另一个是需要流式消费的高并发事件接口。用官方、版本匹配的 Spring 资料支撑版本敏感结论；若提到 RestTemplate，只能作为迁移说明，并给出替代方案和验证摘要。",
+      "expected_output": "A version-aware Java/Spring guide that recommends RestClient for the blocking request/response case and WebClient for the reactive or streaming case. It does not present RestTemplate as the current default and labels any migration-only mention clearly.",
+      "files": [],
+      "expectations": [
+        "The guide declares Spring Boot 4.0.6 and cites official version-matched Spring sources for client-selection and API-status claims.",
+        "The synchronous blocking example or recommendation uses RestClient rather than RestTemplate.",
+        "The reactive or streaming use case uses WebClient and explains why its execution model is required.",
+        "Any RestTemplate mention is explicitly migration- or compatibility-only and names RestClient or WebClient as its replacement.",
+        "The verification summary distinguishes source checks from unexecuted code or integration checks."
+      ]
+    }
+  ]
+}

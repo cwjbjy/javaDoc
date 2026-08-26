@@ -1,0 +1,9 @@
+{
+  "source_path": "Java/guide-writing/SKILL.md",
+  "stored_copy": "evals/baselines/staged-skill.md",
+  "git_index_blob": "73ecf6476cf27e191e78a07ebf69b322241f510a",
+  "sha256": "7D06C65A95F02E4334AC1FC09357E51B29DA79ACDD2B0DF129154624B6590A7E",
+  "line_count": 711,
+  "byte_count": 33764,
+  "note": "This identifies the exact user-staged baseline used for RED evaluation. The index entry must not be rewritten by the implementation workflow."
+}

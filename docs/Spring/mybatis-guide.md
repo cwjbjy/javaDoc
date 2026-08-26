@@ -2,6 +2,8 @@
 
 > 本指南循序渐进介绍 MyBatis —— 从"为什么不用 JDBC 直接写 SQL"到"用 MyBatis 精确控制每一条 SQL"，每步只引入一个新概念。
 > 适用于 MyBatis 3.x / Spring Boot 3.x。假设你已了解 Spring IOC/DI 基础（可参考 [Spring IOC/DI 指南](spring-ioc-di-guide.md)）。
+> 想让代码生成器自动产出实体 / Mapper / Example 类？见 [MyBatis Generator 指南](mybatis-generator-guide.md)。
+> 想从"语句与 Java 调用"的角度系统看 XML 里的 SQL？见 [MyBatis XML SQL 指南](mybatis-xml-sql-guide.md)。
 
 ---
 
@@ -333,12 +335,14 @@ public class UserController {
 
 而不是：
 
-````java
+```java
 // 不推荐：Controller 直接调用 Mapper
 @GetMapping("/user/{id}")
 public User getUser(@PathVariable Long id) {
     return userMapper.selectById(id);  // ❌ 跳过了 Service 层
 }
+```
+
 ---
 
 ## 3. SQL 映射基础
@@ -365,7 +369,7 @@ MyBatis 提供了两种参数占位方式，行为截然不同：
 <select id="selectAll" resultMap="BaseResultMap">
     SELECT * FROM user ORDER BY ${column} ${direction}
 </select>
-````
+```
 
 > **铁律**：能用 `#{}` 就用 `#{}`。只有表名、字段名、ORDER BY 排序方向等**不可能用预编译参数表示**的极少情况才用 `${}`，并且要确保值来自代码常量而非用户输入。
 
@@ -932,3 +936,5 @@ resultType 与 resultMap 混用      复杂映射失效                    JOIN 
 - [MyBatis 官方文档](https://mybatis.org/mybatis-3/) — SQL 映射、动态 SQL、配置完整参考
 - [MyBatis Spring Boot Starter](https://mybatis.org/spring-boot-starter/) — Spring Boot 集成官方文档
 - [MyBatis-Plus](https://baomidou.com/) — MyBatis 增强工具
+- [MyBatis Generator 指南](mybatis-generator-guide.md) — 用 mybatis-generator-maven-plugin 自动生成实体、Mapper 与 Example 类
+- [MyBatis XML SQL 指南](mybatis-xml-sql-guide.md) — XML 语句元素、参数绑定、返回类型契约与 Java 调用

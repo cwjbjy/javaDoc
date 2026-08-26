@@ -58,6 +58,24 @@ Check specifically:
 - nullable values and fluent calls match the API contract;
 - package names and imports match the declared framework version.
 
+## Spring HTTP client choices
+
+For Spring Boot 4 guides, do not present `RestTemplate` as the recommended
+HTTP client for new code. Choose the client by execution model:
+
+- use `RestClient` for conventional synchronous, blocking request/response
+  calls;
+- use `WebClient` when the guide requires a reactive, non-blocking, streaming,
+  or high-concurrency execution model;
+- show `RestTemplate` only for a migration or compatibility decision, clearly
+  label it as legacy in that context, and provide the appropriate
+  `RestClient` or `WebClient` replacement.
+
+Check this choice, its APIs, and any deprecation or support-status wording
+against official documentation for the declared Spring Boot and Spring
+Framework versions. Do not infer the right client from the application's use
+of Spring MVC or WebFlux alone; explain the required execution model.
+
 ## Spring Security guidance
 
 Treat the filter chain and authentication architecture as version-sensitive.
@@ -94,6 +112,8 @@ pagination, or limits rather than calling one object merely a “container.”
 - Imports, custom symbols, dependencies, and commands are complete for
   complete examples.
 - No deprecated API is presented as current.
+- Spring Boot 4 HTTP examples use `RestClient` or `WebClient` as appropriate;
+  any `RestTemplate` example is migration-only and names its replacement.
 - Spring claims are supported by a context start, focused integration test, or
   an explicit unverified note.
 - Examples demonstrate the claimed behavior rather than only constructing

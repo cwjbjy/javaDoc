@@ -57,6 +57,19 @@ Allocate space according to importance and expected use, not API count. A
 frequent decision deserves more explanation than a rare option even when the
 rare option has more parameters.
 
+Keep one topic's variants and workflow together before switching to another
+topic. If the draft moves from A to B and then returns to teach a normal part
+of A, move that material back unless the return represents a real dependency.
+Place an explanation with the concept it clarifies, not with the file or class
+where its implementation happens to be declared.
+
+Consolidate a mechanism's explanation in one owning section. Other sections
+may provide the minimum reminder and a link, but should not repeat a shallow
+version and a detailed version separately. During review, ask whether each
+section is necessary for the reader's stated outcome; remove or compress
+background, protocols, management features, and adjacent variants that do not
+support that outcome.
+
 ## Boundaries with existing documents
 
 Inspect related documentation before drafting when it is available.
@@ -82,6 +95,17 @@ guide's language. State what it omits when readers might mistake it for a
 complete program. Check syntax, symbol consistency, and the behavior being
 illustrated; do not claim execution.
 
+For build files and setup snippets, show the required additions when the
+reader is applying them to an existing project. Omit familiar boilerplate that
+does not teach the topic. Explain each topic-specific API introduced by the
+fragment, and identify omitted repositories, DTOs, services, or other
+supporting symbols by role so readers do not mistake them for framework APIs.
+
+Prefer a realistic trigger path over a demonstration-only lifecycle hook when
+the guide teaches application integration. If scaffolding is used only to
+make a demonstration convenient, say that it is optional and not a required
+production pattern.
+
 ### Complete examples not yet verified
 
 Introduce the block with `Complete example, not yet verified` or the
@@ -97,6 +121,11 @@ List unresolved dependency coordinates and the unexecuted or failed command
 under `Unverified`. This state is complete enough for a reader to test, but it
 does not carry the runnable label.
 
+Unlike an illustrative fragment, a standalone complete example retains the
+boilerplate, build context, and entry point required to reproduce it. Do not
+apply an “increment only” presentation rule when that would make the example
+incomplete.
+
 ### Verified runnable examples
 
 Introduce the block with `Verified runnable example` or the equivalent only
@@ -109,12 +138,36 @@ When a real project example is useful, remove secrets, personal data, private
 hosts, and irrelevant proprietary details. Keep ecosystem conventions and
 identifiers recognizable.
 
+Use names that expose responsibility or consumer intent rather than copying a
+protocol key mechanically. Comment non-obvious configuration, constants, and
+framework registrations with their purpose or decision boundary; do not add
+comments that merely repeat an identifier. Keep names and values synchronized
+across prose, diagrams, tables, configuration, and code.
+
+## Configuration decisions
+
+When a setting affects behavior or selection, give the reader enough evidence
+to decide whether to change it:
+
+- the version-matched default and the value used by the guide;
+- the observable behavior each value produces;
+- why the guide changes or retains the default;
+- when to enable the option and when to leave it disabled;
+- the purpose and optionality of each added dependency.
+
+Use a numbered scenario when a quantity controls flow. For example, explain a
+limit as “send N items, wait for completion, then replenish” rather than
+restating that it “controls outstanding items.” Do not create a ceremonial
+table when only one setting needs a sentence.
+
 ## Version and terminology
 
 Declare a target version when APIs, behavior, defaults, class names, or
 architecture change across releases. Use the target version's supported
-current API. Mention older names only for migration or compatibility, marking
-their status and replacement.
+current API and verify the recommendation against primary, version-matched
+sources. Mention older names only for migration or compatibility, marking
+their status, replacement, and the relevant version boundary. Read
+[version-freshness.md](version-freshness.md) for the full decision rule.
 
 Define external terms using:
 
@@ -139,6 +192,32 @@ Add a diagram only for a relationship, hierarchy, state transition, or
 multi-step flow that is materially harder to understand linearly. Use Mermaid
 only when the renderer supports it; otherwise prefer small ASCII diagrams.
 
+Every domain-specific name in a diagram should map to nearby prose,
+configuration, or code. State who creates or supplies a queue, route, service,
+file, or other named object when its origin is not already visible.
+
+## Revision closure
+
+Treat user questions about “what is this,” “why is it needed,” and “how does
+it work” as evidence of a missing dependency. Put the answer at the first
+place a reader needs it; answering only in a delivery note or review comment
+does not repair the guide.
+
+After moving, renaming, or deleting content, search the whole artifact for the
+old concept, heading, number, and identifier. Recheck:
+
+- table-of-contents labels and anchors;
+- heading and ordered-step numbering;
+- references such as “section X,” “below,” and “at the end of this section”;
+- promises made by headings and section introductions;
+- names and values repeated in prose, diagrams, tables, configuration, and
+  code;
+- fragments that depended on removed prerequisites, commands, or examples.
+
+Do not rely on a structural validator to find semantic remnants. It can prove
+that a link target exists, but not that a sentence still describes the right
+mechanism.
+
 ## Review checklist
 
 Before delivery, check:
@@ -150,5 +229,9 @@ Before delivery, check:
 - Promised outcomes have visible trigger paths.
 - Mutable claims follow the selected evidence gate.
 - Existing-document boundaries preserve minimum local context.
+- Topic variants stay together and explanations live with their owning
+  concept.
+- Behavior-changing settings include the decision context the reader needs.
+- Renames and deletions leave no stale promises, references, or identifiers.
 - Tables and diagrams earn their space.
 - The guide contains no unresolved placeholders or sensitive data.

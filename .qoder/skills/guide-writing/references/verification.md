@@ -11,7 +11,7 @@ example or claim rather than assigning one level to the whole guide.
 | Complete example, not yet verified | Syntax and symbol review; list unresolved dependencies and the unexecuted or failed command |
 | Verified runnable standalone example | Resolve dependencies, compile or execute in an available toolchain, and record the command/result |
 | Framework integration or configuration | Dependency resolution plus the smallest meaningful smoke test |
-| Version-sensitive API, default, lifecycle, or deprecation claim | Primary documentation, specification, release notes, or source for the declared version |
+| Version-sensitive API, default, toggle behavior, lifecycle, compatibility boundary, or deprecation claim | Primary documentation, specification, release notes, or source for the declared version |
 | Internal constant, class name, package path, ordering, or architecture detail | Version-matched source or authoritative generated reference; smoke-test when practical |
 | Security- or data-safety-sensitive procedure | Primary guidance plus explicit prerequisites, failure modes, and non-destructive test conditions |
 

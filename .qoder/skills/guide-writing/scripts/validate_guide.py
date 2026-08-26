@@ -85,6 +85,26 @@ def collect_structure(lines: list[str]) -> tuple[list[dict[str, Any]], list[dict
     return headings, errors, fence_count
 
 
+def collect_local_links(lines: list[str]) -> list[tuple[str, int]]:
+    """Collect heading links outside fenced code blocks."""
+    links: list[tuple[str, int]] = []
+    open_fence: tuple[str, int] | None = None
+
+    for number, line in enumerate(lines, start=1):
+        fence_match = FENCE_RE.match(line)
+        if fence_match:
+            marker = fence_match.group(1)
+            if open_fence is None:
+                open_fence = (marker[0], len(marker))
+            elif marker[0] == open_fence[0] and len(marker) >= open_fence[1]:
+                open_fence = None
+            continue
+        if open_fence is None:
+            links.extend((target, number) for target in LOCAL_LINK_RE.findall(line))
+
+    return links
+
+
 def validate(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -99,6 +119,7 @@ def validate(path: Path) -> dict[str, Any]:
 
     lines = text.splitlines()
     headings, errors, fence_count = collect_structure(lines)
+    local_links = collect_local_links(lines)
     h1_headings = [heading for heading in headings if heading["level"] == 1]
     h2_headings = [heading for heading in headings if heading["level"] == 2]
 
@@ -126,6 +147,8 @@ def validate(path: Path) -> dict[str, Any]:
 
     anchors = {heading["anchor"] for heading in headings}
     toc_links: list[tuple[str, int]] = []
+    toc_start: int | None = None
+    toc_end: int | None = None
     if toc_headings:
         toc_start = toc_headings[0]["line"]
         next_h2_lines = [
@@ -134,17 +157,27 @@ def validate(path: Path) -> dict[str, Any]:
             if heading["line"] > toc_start
         ]
         toc_end = min(next_h2_lines) if next_h2_lines else len(lines) + 1
-        for line_number in range(toc_start + 1, toc_end):
-            for target in LOCAL_LINK_RE.findall(lines[line_number - 1]):
-                toc_links.append((target, line_number))
-                if target not in anchors:
-                    errors.append(
-                        {
-                            "code": "toc-target-missing",
-                            "line": line_number,
-                            "message": f"TOC target '#{target}' does not match any heading anchor.",
-                        }
-                    )
+
+    for target, line_number in local_links:
+        in_toc = (
+            toc_start is not None
+            and toc_end is not None
+            and toc_start < line_number < toc_end
+        )
+        if in_toc:
+            toc_links.append((target, line_number))
+        if target not in anchors:
+            errors.append(
+                {
+                    "code": (
+                        "toc-target-missing" if in_toc else "local-link-target-missing"
+                    ),
+                    "line": line_number,
+                    "message": (
+                        f"Local heading link '#{target}' does not match any heading anchor."
+                    ),
+                }
+            )
 
     for line_number, line in enumerate(lines, start=1):
         for pattern in PLACEHOLDER_PATTERNS:
@@ -167,6 +200,7 @@ def validate(path: Path) -> dict[str, Any]:
             "h1_count": len(h1_headings),
             "h2_content_count": content_h2_count,
             "toc_link_count": len(toc_links),
+            "local_link_count": len(local_links),
             "code_fence_markers": fence_count,
         },
     }

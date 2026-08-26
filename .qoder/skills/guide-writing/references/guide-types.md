@@ -28,6 +28,11 @@ The number of stages follows the dependency chain. Two strong stages are
 better than three artificial ones; five may be appropriate when each stage
 unlocks the next.
 
+For a flow-oriented mechanism, consider following one representative request,
+message, record, or event through its complete journey before summarizing the
+parts. Establish the initial state and the origin of every important name.
+Use this narrative only when it makes causality clearer than direct sections.
+
 Good fits include authentication flows, compiler pipelines, framework
 lifecycle mechanisms, migrations, debugging methods, and tool workflows.
 
@@ -44,6 +49,11 @@ Each branch should answer the same comparison dimensions when relevant:
 - one representative example;
 - important constraints or variants;
 - where to go for deeper detail.
+
+When behavioral differences are subtle, run the same input or scenario through
+each branch. This exposes different outcomes and timing more clearly than a
+set of unrelated examples. The comparison aid summarizes those branches; it
+does not replace their explanations.
 
 Good fits include language feature families, API groups, command catalogs,
 data structures, error taxonomies, and competing architecture choices.
