@@ -46,12 +46,12 @@ docs 知识库已有 21 篇 Spring 指南（框架级为主：MVC、事务、安
 
 ### D4. 最小 WebFlux 认知的精确边界
 
-只引入三个概念：`RouterFunction`（函数式路由注册）、`Flux<ServerSentEvent>`（SSE 数据流）、"事件循环线程上禁止阻塞"。不引入：Reactor 算子体系（map/flatMap 语义不展开，遇到只用自然语言说明）、背压理论、Reactor 线程调度器（Scheduler）。§7 阻塞陷阱的三解法（McpSyncServer / 非阻塞调用 / 显式卸载）是边界内容，属于选型而非 Reactor 教学。
+只引入两个概念：`Flux<ServerSentEvent>`（SSE 数据流）、"事件循环线程上禁止阻塞"。端点注册用读者熟悉的注解式路由示意（`@RestController` + `@GetMapping`），不引入函数式路由（`RouterFunction`）——starter 内部实现与教学示意分开。不引入：Reactor 算子体系（map/flatMap 语义不展开，遇到只用自然语言说明）、背压理论、Reactor 线程调度器（Scheduler）。§7 阻塞陷阱的三解法（McpSyncServer / 非阻塞调用 / 显式卸载）是边界内容，属于选型而非 Reactor 教学。
 备选：完全不提 WebFlux 内部 —— 被否，§4"starter 自动配置了什么"是 spec 的硬性要求，不提内部就讲不清 SSE vs streamable HTTP 取舍。
 
-### D5. 传输层取舍：SSE vs streamable HTTP 用对照表呈现
+### D5. 传输层取舍：SSE / STREAMABLE / STATELESS 用对照表呈现
 
-Spring AI 1.1.x 同时支持 SSE（webflux starter 默认）与 STREAMABLE（已核实）。指南不选边，用对照表呈现取舍维度：流式推送能力、与旧客户端兼容性、穿透代理的友好度、实现复杂度。这与 guide-writing 的"三个以上可复用选择配决策表"原则一致。
+Spring AI 1.1.x 同时支持 SSE（webflux starter 默认）、STREAMABLE 与 STATELESS（已核实：STATELESS 为无状态 Streamable-HTTP，请求间不维持会话，不支持服务端推送 elicitation/sampling/ping）。指南不选边，用对照表呈现取舍维度：会话状态、服务端推送能力、与旧客户端兼容性、穿透代理的友好度、演进方向。STATELESS 的加入源于真实生产项目调研（金融数据 MCP 服务以 ASYNC + STATELESS 部署于微服务集群），同时吸收该项目的身份配置（name/version/instructions）与 ThreadLocal 上下文传播实践。这与 guide-writing 的"三个以上可复用选择配决策表"原则一致。
 
 ### D6. 证据门槛：§5 为 complete example，全篇诚实标注
 

@@ -23,9 +23,9 @@
 
 ## 4. WebFlux 传输层与最小响应式认知（§4）
 
-- [x] 4.1 starter 自动配置了什么：MCP 端点注册（`RouterFunction`）
+- [x] 4.1 starter 自动配置了什么：MCP 端点注册（注解式路由示意）
 - [x] 4.2 SSE 传输直觉：`Flux<ServerSentEvent>` 数据流（不展开 Reactor 算子）
-- [x] 4.3 SSE vs streamable HTTP 对照表（流式推送 / 客户端兼容 / 代理穿透 / 实现复杂度四维度）
+- [x] 4.3 SSE / STREAMABLE / STATELESS 三传输对照表（会话状态 / 服务端推送 / 客户端兼容 / 代理穿透 / 演进方向）
 - [x] 4.4 "最小认知"边界标注：全文只此一处讲 WebFlux 内部
 
 ## 5. 自包含贯穿示例（§5）
@@ -35,6 +35,7 @@
 - [x] 5.3 三个工具：`searchProducts`（关键词查询）/ `getStock`（按 ID 查库存）/ `recommendProducts`（类目推荐）
 - [x] 5.4 工具描述质量对比：好描述 vs 坏描述对 AI 调用效果的影响
 - [x] 5.5 配置类与启动类，给出运行命令与验证步骤（标注 complete example / not yet verified）
+- [x] 5.6 服务身份与配置：application.yml（name/version/instructions + 环境变量占位符模式）
 
 ## 6. 测试与客户端接入（§6）
 
@@ -45,9 +46,9 @@
 ## 7. 边界与选型（§7）
 
 - [x] 7.1 webmvc vs webflux 两种 MCP server starter 选型对照
-- [x] 7.2 阻塞陷阱：事件循环线程上阻塞调用的机理（图）+ 三种解法（McpSyncServer / 非阻塞调用 / 显式卸载）
+- [x] 7.2 阻塞陷阱：事件循环线程上阻塞调用的机理（图）+ 三种解法（McpSyncServer / 非阻塞调用 / 显式卸载）+ ASYNC 第二坑（ThreadLocal 上下文丢失与 Reactor 上下文传播）
 - [x] 7.3 版本矩阵（已核实）：1.0.x ↔ Boot 3.4/3.5、1.1.x ↔ Boot 3.5.x、Boot 4.0 需 2.0.x
-- [x] 7.4 互链：multithreading-guide（异步边界前置）、microservices-guide（Gateway 延伸）、未来 WebFlux 指南占位
+- [x] 7.4 互链：multithreading-guide（异步边界前置）、microservices-guide（Gateway 延伸）、未来 WebFlux 指南占位、编程式工具注册（ToolCallback）提点
 
 ## 8. 验证与交付
 

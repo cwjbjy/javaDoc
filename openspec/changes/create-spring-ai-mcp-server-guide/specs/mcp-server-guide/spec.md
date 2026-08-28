@@ -38,7 +38,7 @@
 
 ### Requirement: WebFlux 传输层与最小响应式认知（§4）
 
-指南 SHALL 说明 `spring-ai-starter-mcp-server-webflux` 自动配置了什么（MCP 端点的 WebFlux 函数式路由与 SSE 传输，默认端点 POST /mcp），并给出 SSE 与 streamable HTTP 两种传输方式的取舍（1.1.x 两者均可用）；SHALL 只引入最小 WebFlux 认知（`RouterFunction`、`Flux<ServerSentEvent>`），SHALL NOT 展开 Reactor 算子体系。
+指南 SHALL 说明 `spring-ai-starter-mcp-server-webflux` 自动配置了什么（MCP 端点的 WebFlux 路由与 SSE 传输，默认端点 POST /mcp），并给出 SSE、streamable HTTP、stateless HTTP 三种传输方式的取舍（1.1.x 三者均可用，stateless 适用于无状态多实例部署且不支持服务端推送）；SHALL 只引入最小 WebFlux 认知（`Flux<ServerSentEvent>`），SHALL NOT 展开 Reactor 算子体系与函数式路由（端点注册用注解式路由示意）。
 
 #### Scenario: 读者理解 starter 的封装
 
@@ -47,7 +47,7 @@
 
 ### Requirement: 自包含贯穿示例（§5）
 
-指南 SHALL 包含一个自包含的贯穿示例（商品域：商品查询 + 库存查询 + 推荐，2~3 个 `@Tool`），展示多工具注册与描述质量对 AI 调用效果的影响；示例 SHALL 不依赖本项目源码与 `pom.xml`（路线 A），依赖坐标完整给出。
+指南 SHALL 包含一个自包含的贯穿示例（商品域：商品查询 + 库存查询 + 推荐，2~3 个 `@McpTool`），展示多工具注册与描述质量对 AI 调用效果的影响；示例 SHALL 包含完整 `application.yml`（服务身份字段 `name`/`version`/`instructions` 与环境变量占位符模式）；示例 SHALL 不依赖本项目源码与 `pom.xml`（路线 A），依赖坐标完整给出。
 
 #### Scenario: 读者复现完整示例
 
@@ -65,7 +65,7 @@
 
 ### Requirement: 阻塞陷阱与选型边界（§7）
 
-指南 SHALL 覆盖三个边界问题：webmvc 与 webflux 两种 MCP server starter 的选型、事件循环线程上禁止阻塞调用（`@McpTool` 方法内阻塞式数据库调用导致会话卡死的机理与三种解法）、以及版本矩阵（已核实：Spring AI 1.0.x ↔ Boot 3.4/3.5、1.1.x ↔ Boot 3.5.x、Boot 4.0 需 2.0.x）。
+指南 SHALL 覆盖三个边界问题：webmvc 与 webflux 两种 MCP server starter 的选型、事件循环线程上禁止阻塞调用（`@McpTool` 方法内阻塞式数据库调用导致会话卡死的机理与三种解法）、以及 ASYNC 模式下 ThreadLocal 上下文丢失与 Reactor 上下文传播解法（版本边界以已核实事实为准）。
 
 #### Scenario: 读者规避阻塞陷阱
 

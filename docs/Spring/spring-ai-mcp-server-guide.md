@@ -2,13 +2,13 @@
 
 > Audience: 具备 Spring Boot 基础（理解 `@Component`、自动配置与 `application.yml`），希望把业务能力暴露给 AI Agent 的开发人员
 > Outcome: 能用 `spring-ai-starter-mcp-server-webflux` 独立跑起一个 MCP Server，理解工具描述为何决定 AI 调用效果，并能规避阻塞陷阱
-> Applicable version: Spring AI 1.1.x、Spring Boot 3.5.x、JDK 17
+> Applicable version: Spring AI 1.1.7、Spring Boot 3.5.14、JDK 17
 
 ## Scope
 
 这篇指南解决的是"如何让 AI Agent 发现并调用你的业务能力"。阅读前不需要任何响应式编程知识：MCP Server 的传输层由 starter 自动配置，你只需要写带注解的业务方法。
 
-**涵盖**：MCP 协议最小认知、`@McpTool`/`@McpToolParam` 编程模型、WebFlux SSE 传输层、一个商品域贯穿示例、WebTestClient 测试与 Claude Desktop 接入、选型边界。
+**涵盖**：MCP 协议最小认知、`@McpTool`/`@McpToolParam` 编程模型、WebFlux SSE 传输层、一个商品域贯穿示例、Spring 上下文测试与 MCP 客户端接入、选型边界。
 
 **不涵盖**：完整 WebFlux/Reactor（只保留理解传输层所需的最小认知）、LLM 提示词工程、MCP client 端编程（只给测试所需的最小配置）。异步任务边界请参考 [Spring Boot 多线程指南](spring-boot-multithreading-guide.md)，Spring Cloud Gateway 等 WebFlux 技术栈延伸请参考 [微服务指南](spring-cloud-microservices-guide.md)。
 
@@ -17,7 +17,7 @@
 ## 目录
 
 1. [为什么需要 MCP Server](#1-为什么需要-mcp-server)
-2. [MCP 协议 30 秒](#2-mcp-协议-30-秒)
+2. [MCP 协议](#2-mcp-协议)
 3. [Spring AI 编程模型](#3-spring-ai-编程模型)
 4. [WebFlux 传输层](#4-webflux-传输层)
 5. [实战：商品助手 MCP Server](#5-实战商品助手-mcp-server)
@@ -67,7 +67,7 @@ AI 需要的不是更好的 JSON 文档，而是**工具自己会说话**：它�
 
 ### 1.3 MCP 的承诺：让工具自我描述
 
-Model Context Protocol（MCP）正是为这个问题而生。它由 Anthropic 提出，2026 年已成为 AI 集成的**事实标准**，各大 IDE、桌面客户端（Claude Desktop 等）与云平台原生支持。
+Model Context Protocol（MCP）正是为这个问题而生。它由 Anthropic 提出，并已被多种 IDE、桌面客户端与开发框架采用。具体支持的传输类型和配置方式取决于客户端版本。
 
 MCP 的承诺一句话：**你按约定描述工具，AI 按描述发现并调用工具，双方都无需事先约定接口细节。**
 
@@ -91,12 +91,12 @@ MCP 的承诺一句话：**你按约定描述工具，AI 按描述发现并调�
 ### 1.4 本指南的前提与范围
 
 - **前提知识**：Spring Boot 的 `@Component`、自动配置、`application.yml`（可参考 [Spring IOC/DI 指南](spring-ioc-di-guide.md)）；HTTP 与 JSON 常识。
-- **版本声称**：Spring AI 1.1.x + Spring Boot 3.5.x + JDK 17。版本兼容矩阵见 [§7.3](#73-版本矩阵)。
+- **版本声称**：Spring AI 1.1.7 + Spring Boot 3.5.14 + JDK 17。与其他发布线的边界见 [§7.3](#73-版本边界)。
 - **贯穿示例**：一个"商品助手"MCP Server，提供三个工具（商品搜索、库存查询、类目推荐），全部代码自包含，不依赖本项目其他源码。
 
 ---
 
-## 2. MCP 协议 30 秒
+## 2. MCP 协议
 
 > 目标：能看懂后面章节里的协议名词和消息流。不需要逐字节理解协议。
 
@@ -109,19 +109,25 @@ MCP 架构里有三个角色，各司其职：
   │                  Host（宿主）                  │
   │     Claude Desktop / IDE / 你的业务应用        │
   │                                              │
-  │   ┌─────────────┐      ┌───────────────┐     │
-  │   │ MCP Client  │◀────▶│  MCP Server   │     │
-  │   │ （内置的协议  │ JSON │ （你要写的那个）│     │
-  │   │   客户端）   │ -RPC │               │     │
-  │   └─────────────┘      └───────────────┘     │
-  │                                              │
-  │   LLM（大模型）── AI 的"大脑"，决定调哪个工具   │
+  │   ┌─────────────┐                            │
+  │   │ MCP Client  │                            │
+  │   │ （内置的协议  │                            │
+  │   │   客户端）   │                            │
+  │   └──────┬──────┘                            │
+  │          │                                   │
+  │   LLM（大模型）── AI 的"大脑"，决定建议调哪个工具 │
   └──────────────────────────────────────────────┘
+             │ JSON-RPC
+             ▼
+      ┌───────────────┐
+      │  MCP Server   │
+      │ （你要写的那个）│
+      └───────────────┘
 ```
 
-- **Host**：用户正在使用的应用（Claude Desktop、IDE、你自己的程序），它内置了一个 **MCP Client**，并把 AI 大模型接入对话。
+- **Host**：用户正在使用的应用（桌面客户端、IDE、你自己的程序），它管理 LLM 与一个或多个 **MCP Client**。
 - **MCP Client**：负责与 MCP Server 通信、把工具清单喂给 LLM、执行 LLM 发起的工具调用。
-- **MCP Server**：**你要写的东西**。它暴露"工具"（Tools），也可能暴露"资源"（Resources）和"提示模板"（Prompts）——本指南只讲 Tools。
+- **MCP Server**：**你要写的东西**。它通常是 Host 之外的独立进程或远程服务，暴露"工具"（Tools），也可能暴露"资源"（Resources）和"提示模板"（Prompts）——本指南只讲 Tools。
 
 ### 2.2 消息格式：JSON-RPC
 
@@ -157,28 +163,7 @@ MCP 的通信基于 JSON-RPC 2.0：所有消息都是 JSON，分"请求"和"响�
 | `description` | 自然语言说明                         | 判断"这个工具能不能解决用户问题" |
 | `inputSchema` | 参数 JSON Schema（类型、必填、说明） | 决定填什么参数                   |
 
-一次完整的工具调用（`tools/call`）是：AI 根据 `description` 选中工具 → 按 `inputSchema` 构造参数 → 客户端发出 `tools/call` 请求 → 服务端执行并返回结果。
-
-### 2.4 initialize 握手
-
-客户端连接后第一件事是 `initialize`：双方交换**协议版本**与**能力声明**（我支持 tools，你支持 logging）。握手成功后，客户端才会发 `tools/list` 和 `tools/call`。
-
-```
-  Client                          Server
-    │  initialize(协议版本, 能力)      │
-    │ ─────────────────────────────▶ │
-    │  ◀───────────────────────────── │ initialized(能力)
-    │  tools/list                    │
-    │ ─────────────────────────────▶ │
-    │  ◀───────────────────────────── │ 工具清单
-    │  tools/call(search_products)   │
-    │ ─────────────────────────────▶ │
-    │  ◀───────────────────────────── │ 执行结果
-```
-
-### 2.5 认知边界
-
-这 30 秒就是本指南需要你懂的**全部协议知识**。完整的消息类型清单、版本协商细节、resources/prompts 的语义，请到 [MCP 官方规范](https://modelcontextprotocol.io/)查阅——用 Spring AI 开发时，这些细节框架都会替你处理。
+一次完整的工具调用（`tools/call`）是：用户用自然语言描述需求 → AI 根据 `description` 选中工具 → 按 `inputSchema` 构造参数 → 客户端发出 `tools/call` 请求 → 服务端执行并返回结果。
 
 ---
 
@@ -191,13 +176,13 @@ MCP 的通信基于 JSON-RPC 2.0：所有消息都是 JSON，分"请求"和"响�
 Spring AI 用 BOM 统一管理版本。`pom.xml` 里加两处：
 
 ```xml
-<!-- 依赖管理：Spring AI BOM 1.1.x -->
+<!-- 依赖管理：Spring AI BOM 1.1.7 -->
 <dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-bom</artifactId>
-            <version>1.1.5</version>
+            <version>1.1.7</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -218,7 +203,7 @@ Spring AI 用 BOM 统一管理版本。`pom.xml` 里加两处：
 > Illustrative fragment：省略了类与包的样板，只展示注解的核心用法。
 
 ```java
-import org.springframework.ai.mcp.server.McpTool;
+import org.springaicommunity.mcp.annotation.McpTool;
 
 @McpTool(description = "按关键词搜索商品，返回匹配的商品列表")
 public List<Product> searchProducts(String keyword) {
@@ -253,13 +238,13 @@ public List<Product> searchProducts(String keyword) {
 > Illustrative fragment：只展示参数注解，方法体省略。
 
 ```java
-import org.springframework.ai.mcp.server.McpTool;
-import org.springframework.ai.mcp.server.McpToolParam;
+import org.springaicommunity.mcp.annotation.McpTool;
+import org.springaicommunity.mcp.annotation.McpToolParam;
 
 @McpTool(description = "按关键词模糊搜索商品。当用户想找商品但不知道具体 ID 时使用。返回商品列表。")
 public List<Product> searchProducts(
         @McpToolParam(description = "搜索关键词，匹配商品名称，不区分大小写") String keyword,
-        @McpToolParam(description = "最多返回的商品数量，默认 10") int limit) {
+        @McpToolParam(description = "最多返回的商品数量，取值 1～50", required = false) Integer limit) {
     // ...
 }
 ```
@@ -275,7 +260,7 @@ public List<Product> searchProducts(
 Spring AI 1.1.x 的注册路径是**注解自动扫描**：只要工具方法所在的类是 Spring Bean（`@Component`、`@Service` 等），starter 的自动配置就会把它注册到 MCP Server。
 
 ```java
-import org.springframework.ai.mcp.server.McpTool;
+import org.springaicommunity.mcp.annotation.McpTool;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -301,12 +286,12 @@ spring:
 
 MCP Server 有两种运行模式，通过配置切换：
 
-| 配置                                      | 实现             | 适用场景                                       |
-| ----------------------------------------- | ---------------- | ---------------------------------------------- |
-| `spring.ai.mcp.server.type: SYNC`（默认） | `McpSyncServer`  | 工具方法就是普通同步方法，业务简单直接         |
-| `spring.ai.mcp.server.type: ASYNC`        | `McpAsyncServer` | 工具方法返回 `Mono`/`Flux`，做真正的非阻塞调用 |
+| 配置                                      | 实现             | 只注册的方法                     |
+| ----------------------------------------- | ---------------- | -------------------------------- |
+| `spring.ai.mcp.server.type: SYNC`（默认） | `McpSyncServer`  | 同步方法（返回普通对象）         |
+| `spring.ai.mcp.server.type: ASYNC`        | `McpAsyncServer` | 响应式方法（返回 `Mono`/`Flux`） |
 
-**重要规则**：SYNC 模式**只注册同步方法**（返回普通对象），ASYNC 模式**只注册响应式方法**（返回 `Mono`/`Flux`）。选错模式，方法会被静默忽略——这是最常见的一号坑。
+**重要规则**：SYNC 模式**只注册同步方法**，ASYNC 模式**只注册响应式方法**（返回 `Mono`/`Flux`/`Publisher`）。选错模式时，方法会被跳过并写入 WARN 日志——这是常见配置错误。
 
 ```
   SYNC 模式（默认）                ASYNC 模式
@@ -315,13 +300,11 @@ MCP Server 有两种运行模式，通过配置切换：
   List<Product> search(...)       Mono<List<Product>> search(...)
       │ 同步执行                        │ 非阻塞
       ▼                                ▼
-  McpSyncServer 用自己的           McpAsyncServer 跑在
-  线程池执行工具                    WebFlux 事件循环线程上
+  SDK 默认把同步处理卸载到           响应式链默认沿当前
+  boundedElastic 调度器             Reactor 调度上下文执行
       │                                │
       └── 线程模型简单 ──┘               └── 禁止阻塞！§7.2 详解
 ```
-
-本指南的贯穿示例用默认的 SYNC 模式——工具方法里查内存数据，简单直接。什么时候该上 ASYNC、为什么 ASYNC 里不能随便阻塞，留到 [§7.2](#72-阻塞陷阱) 讲透。
 
 ---
 
@@ -345,17 +328,27 @@ MCP Server 有两种运行模式，通过配置切换：
                              └───────────────────────────┘
 ```
 
-第 3 步用的是 WebFlux 的**函数式路由**（`RouterFunction`）——WebFlux 世界里不写 `@RestController` 也能注册路由的另一种方式：
-
-> Illustrative fragment：示意 starter 内部注册 SSE 路由的形态，非实际源码。
+第 3 步注册的两个 HTTP 端点，**你不需要手写**——starter 自动配置完成。但为了理解端点的作用，可以想象它们等价于这样的注解式路由（写法与 Spring MVC 几乎一致）：
 
 ```java
-RouterFunction<ServerResponse> route() {
-    return RouterFunctions
-            .route(GET("/sse"), request -> /* 返回 SSE 事件流 */)
-            .andRoute(POST("/mcp/message"), request -> /* 接收 JSON-RPC 消息 */);
+// 示意代码：展示 starter 自动配置的端点形态，无需手写
+@RestController
+public class McpSseController {
+
+    @GetMapping("/sse")
+    public Flux<ServerSentEvent<String>> sse() {
+        // 建立 SSE 长连接，工具清单、执行结果都从这里推送给客户端
+    }
+
+    @PostMapping("/mcp/message")
+    public Mono<Void> message() {
+        // 接收客户端的 JSON-RPC 请求（如 tools/call）
+        // 返回 Mono<Void>：只返回 202 Accepted，实际响应通过 SSE 连接推送
+    }
 }
 ```
+
+**注意 POST 端点的特殊之处**：客户端把请求 POST 到这里，服务器返回 202 Accepted（无响应体），真正的执行结果通过 SSE 长连接推送回去。这是 MCP SSE 传输的工作方式。
 
 两个默认端点（可通过 `spring.ai.mcp.server.sse-endpoint` / `sse-message-endpoint` 修改）：
 
@@ -366,7 +359,54 @@ RouterFunction<ServerResponse> route() {
 
 ### 4.2 SSE：一条只出不进的长连接
 
-SSE（Server-Sent Events）是 WebFlux 的杀手锏场景。WebFlux 用 Reactor 的 `Flux<ServerSentEvent<?>>` 描述事件流：
+**先看普通 HTTP 与 SSE 的区别**。普通 HTTP 是“一问一答”：客户端请求，服务端返回一个响应，连接使命完成。SSE（Server-Sent Events）则让服务端可以**保持连接、持续推送**——响应不是一次性的，而是持续不断的事件流：
+
+```
+  普通 HTTP 响应                        SSE 响应
+  ─────────────                       ─────────────
+  客户端请求                          客户端 GET /sse
+      │                                   │
+      ▼                                   ▼
+  服务端返回一次响应                 服务端建立长连接
+      │                                   │
+      连接结束                         ◀─── 事件 1（工具清单）
+                                       ◀─── 事件 2（执行结果）
+                                       ◀─── 事件 3（日志通知）
+                                       ◀─── ……随时推，直到断开
+```
+
+线上传输的每个事件就是一段带 `data:` 前缀的文本（这正是名字 “Server-Sent Events” 的由来）：
+
+```text
+data: {"jsonrpc":"2.0","id":1,"result":{"tools":[...]}}
+
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[...]}}
+```
+
+**MCP 为什么与 SSE 契合**：工具清单、日志通知、执行结果天然是“一串消息”，而不是“一个回答”。用普通 HTTP，客户端只能轮询“好了吗？好了吗？”；用 SSE，服务端处理完主动推回来，不必等客户端问。
+
+**MCP SSE 的“半双工”结构**：连接建立后，消息只在两个方向流动，但走不同的路——这正对应 §4.1 的两个端点：
+
+```
+  客户端                                    服务端
+    │                                        │
+    │  GET /sse 建立长连接                     │
+    │ ──────────────────────────────────────▶│
+    │  ◀──────────────────────────────────────│ 所有“服务端→客户端”的消息
+    │   （响应、通知都从这里推）                 │ 都从这条连接出去
+    │                                        │
+    │  POST /mcp/message                     │
+    │  {"method":"tools/call",...}           │
+    │ ──────────────────────────────────────▶│ 所有“客户端→服务端”的请求
+    │  ◀──────── 202 Accepted（无结果）─────────│ 都从这里进来
+    │                                        │
+    │  ◀──────────────────────────────────────│ 执行完成后，结果从
+    │  {"id":2,"result":{...}}               │ /sse 连接推回
+```
+
+所以 `/sse` 与 `/mcp/message` 分工明确：**请求从 POST 进，响应从 SSE 出**。这也是示意代码里 `message()` 返回 `Mono<Void>` 的原因——它只确认“收到请求”，执行结果不从它返回。
+
+**WebFlux 怎么描述这种事件流**：用 Reactor 的 `Flux<ServerSentEvent<?>>`——一个“事件流”的声明：
 
 > Illustrative fragment：展示 `Flux<ServerSentEvent>` 的形态，不展开 Reactor 算子。
 
@@ -391,27 +431,56 @@ Flux<ServerSentEvent<String>> events =
   [结果]                           [事件1]→[事件2]→[事件3]→…
 ```
 
-MCP 与 SSE 是天作之合：工具清单、日志通知、执行结果天然是"一串消息"，SSE 让服务端可以随时向已连接的客户端推送，而不必等客户端轮询。**本指南对 Reactor 的认知到此为止**——想深入请等待后续的 WebFlux 指南。
+**本指南对 Reactor 的认知到此为止**——想深入请等待后续的 WebFlux 指南。
 
-### 4.3 SSE vs Streamable HTTP：怎么选
+### 4.3 三种传输怎么选：SSE / STREAMABLE / STATELESS
 
-Spring AI 1.1.x 的 WebFlux starter 支持两种传输，用 `spring.ai.mcp.server.protocol` 切换：
+Spring AI 1.1.x 的 WebFlux starter 支持三种传输，用 `spring.ai.mcp.server.protocol` 切换：
 
 | 传输            | 配置                   | 默认端点                         |
 | --------------- | ---------------------- | -------------------------------- |
 | SSE（默认）     | `protocol: SSE`        | GET `/sse` + POST `/mcp/message` |
 | Streamable HTTP | `protocol: STREAMABLE` | POST `/mcp`                      |
+| Stateless HTTP  | `protocol: STATELESS`  | POST `/mcp`                      |
+
+**推送通道结构**——先看清推送发生在哪里：
+
+```
+  SSE：推送是独立的"旁路"长连接
+  ─────────────────────────────
+  客户端  GET /sse ──────▶ 服务端
+    ◀─────────────────────── 事件1、事件2、事件3……
+    （长连接常驻，随时可推，不依赖客户端请求）
+
+  STREAMABLE：推送折叠进"同一个 POST 的响应"里
+  ─────────────────────────────
+  客户端  POST /mcp（tools/call）──▶ 服务端
+    ◀────────────────────────────── 响应体切换为 SSE 流：
+    ◀────────────────────────────── data: 消息1（进度通知）
+    ◀────────────────────────────── data: 消息2（执行结果）
+
+  STATELESS：纯一问一答
+  ─────────────────────────────
+  客户端  POST /mcp ──▶ 服务端
+    ◀──── 恰好一个 JSON-RPC 响应
+    （该响应可流式分块传输，但不能再推第二条消息）
+```
 
 对照取舍：
 
-| 维度          | SSE                                    | Streamable HTTP                              |
-| ------------- | -------------------------------------- | -------------------------------------------- |
-| 流式推送      | 原生支持（长连接）                     | 可选 SSE 流（POST 响应内）                   |
-| 客户端兼容    | 需要客户端支持 SSE 长连接              | 基于普通 HTTP POST，更通用                   |
-| 代理/网关穿透 | 长连接对超时敏感的代理不友好           | 普通请求，穿透友好                           |
-| 演进方向      | 1.1.x 可用；官方 2.0 起标记 deprecated | 官方推荐方向（"replaces the SSE transport"） |
+| 维度          | SSE                                | Streamable HTTP                               | Stateless HTTP                       |
+| ------------- | ---------------------------------- | --------------------------------------------- | ------------------------------------ |
+| 会话状态      | 长连接维持会话                     | 支持会话                                      | 请求间不维持会话                     |
+| 服务端推送    | 原生支持（长连接随时推）           | 响应内 SSE 流，一个请求可发多条消息           | 不支持主动推送；一个请求恰好一个响应 |
+| 客户端兼容    | 需要客户端实现旧版 HTTP+SSE 传输   | 面向实现 Streamable HTTP 的新客户端           | 用 Streamable HTTP 客户端连接        |
+| 代理/网关穿透 | GET 长连接对代理超时和缓冲配置敏感 | 同一 POST 也可能返回 SSE 流，仍需正确配置代理 | 无状态普通请求，负载均衡友好         |
+| 演进方向      | 1.1.7 仍可用，主要用于兼容旧客户端 | MCP 规范当前推荐的 HTTP 传输                  | 为微服务/云原生部署设计              |
 
-**选型建议**：目标是 Claude Desktop 等成熟客户端、追求流式体验 → SSE 完全够用且生态成熟；服务要上云网关、或面向新客户端 → 直接上 Streamable HTTP。本指南贯穿示例用默认的 SSE，不写 `protocol` 配置就是它。
+**别把"流式"与"多消息"混为一谈**。STREAMABLE 的一个 POST 响应里可以有多条完整的 JSON-RPC 消息（进度通知、执行结果、日志各一条）；STATELESS 的一个请求只有恰好一个 JSON-RPC 响应，但该响应可以**流式分块传输**——工具返回大批数据时边生成边发，不必等全部就绪一次返回。为什么 STATELESS 不能再推第二条消息？因为第二条消息本质是"服务器主动发起"，需要会话支撑；STATELESS 抛弃会话换取水平扩展（请求可被任意实例处理），代价就是无 elicitation/sampling/ping 等主动推送能力。
+
+**选型建议**：先以目标客户端实际支持的传输为准。兼容只支持旧版 HTTP+SSE 的客户端时选 SSE；客户端支持 Streamable HTTP 时优先选 `STREAMABLE`；多实例部署、需要负载均衡分摊请求时选 `STATELESS`（代价是不支持服务端主动推送消息）。是否经过网关不能单独决定传输类型，两者的流式响应都可能需要调整代理超时和缓冲。本指南贯穿示例用 1.1.7 的默认 SSE，不写 `protocol` 配置就是它。
+
+> 实战案例：某生产环境金融数据 MCP 服务以 `type: ASYNC` + `protocol: STATELESS` 部署在微服务集群（Nacos 注册发现），实例无状态，客户端请求可被任意实例处理。
 
 ### 4.4 安全警告：端点默认裸奔
 
@@ -455,7 +524,7 @@ Spring AI 1.1.x 的 WebFlux starter 支持两种传输，用 `spring.ai.mcp.serv
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
-                <version>1.1.5</version>
+                <version>1.1.7</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -469,7 +538,7 @@ Spring AI 1.1.x 的 WebFlux starter 支持两种传输，用 `spring.ai.mcp.serv
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux-test</artifactId>
+            <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -545,8 +614,8 @@ public class ProductStore {
 ```java
 package com.example.product;
 
-import org.springframework.ai.mcp.server.McpTool;
-import org.springframework.ai.mcp.server.McpToolParam;
+import org.springaicommunity.mcp.annotation.McpTool;
+import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -560,16 +629,17 @@ public class ProductTools {
         this.store = store;
     }
 
-    @McpTool(description = """
+    @McpTool(name = "search_products", description = """
             按关键词模糊搜索商品。当用户想找某个商品但不知道具体 ID 时使用。
             返回商品列表（含 ID、名称、类目、价格、库存），无匹配时返回空列表。""")
     public List<Product> searchProducts(
             @McpToolParam(description = "搜索关键词，匹配商品名称，不区分大小写") String keyword,
-            @McpToolParam(description = "最多返回的商品数量，默认 10") int limit) {
-        return store.searchByKeyword(keyword, limit);
+            @McpToolParam(description = "最多返回的商品数量，取值 1～50；省略时为 10", required = false)
+            Integer limit) {
+        return store.searchByKeyword(keyword, resolveLimit(limit, 10));
     }
 
-    @McpTool(description = """
+    @McpTool(name = "get_stock", description = """
             按商品 ID 查询库存。当用户询问某个具体商品还有没有货时使用。
             返回该商品的名称与库存数量；商品不存在时返回"商品不存在"。""")
     public String getStock(
@@ -581,13 +651,24 @@ public class ProductTools {
         return product.name() + " 当前库存：" + product.stock() + " 件";
     }
 
-    @McpTool(description = """
+    @McpTool(name = "recommend_products", description = """
             按类目推荐商品。当用户想看某一类目下有什么可选商品时使用。
             类目可选值：手机数码、电脑办公。返回该类目下的商品列表。""")
     public List<Product> recommendProducts(
             @McpToolParam(description = "商品类目，可选值：手机数码、电脑办公") String category,
-            @McpToolParam(description = "最多返回的商品数量，默认 5") int limit) {
-        return store.recommendByCategory(category, limit);
+            @McpToolParam(description = "最多返回的商品数量，取值 1～50；省略时为 5", required = false)
+            Integer limit) {
+        return store.recommendByCategory(category, resolveLimit(limit, 5));
+    }
+
+    private static int resolveLimit(Integer limit, int defaultValue) {
+        if (limit == null) {
+            return defaultValue;
+        }
+        if (limit < 1 || limit > 50) {
+            throw new IllegalArgumentException("limit 必须在 1～50 之间");
+        }
+        return limit;
     }
 }
 ```
@@ -641,7 +722,43 @@ GET  http://localhost:8080/sse           ← SSE 事件流端点
 POST http://localhost:8080/mcp/message   ← JSON-RPC 消息端点
 ```
 
-> 验证步骤：本示例的完整验收路径在 §6（WebTestClient 自动化验证 + Claude Desktop 手动接入）。
+> 验证步骤：本示例的完整验收路径在 §6（Spring 上下文自动化验证 + MCP 客户端手动接入）。
+
+### 5.6 服务身份与配置
+
+示例的完整 `application.yml`：
+
+```yaml
+spring:
+  ai:
+    mcp:
+      server:
+        name: product-assistant # 服务名称：initialize 握手时声明，客户端 UI 显示
+        version: 1.0.0 # 服务版本：升级后客户端可感知变化
+        instructions: "商品助手：帮助用户搜索商品、查询库存、按类目推荐" # 给 AI 的全局使用说明
+        type: SYNC # 本示例工具全是同步方法
+        # protocol: SSE            # 默认 SSE，省略不写即可
+```
+
+三个身份字段随 `initialize` 握手发给客户端：
+
+- `name` / `version`：服务标识，出现在客户端日志与 UI 里。生产服务会带上业务名与真实版本号（例如真实金融数据服务的 `caihui-mcp-server` v1.0.7）
+- `instructions`：给客户端/AI 的全局使用说明，作为所有工具描述的"背景板"，可选但推荐填写
+
+生产环境通常用环境变量占位符管理这些值，配合配置中心（Nacos / Spring Cloud Config）在部署时注入：
+
+```yaml
+server:
+  port: ${SERVER_PORT:8080}
+spring:
+  ai:
+    mcp:
+      server:
+        name: ${MCP_SERVER_NAME:product-assistant}
+        version: ${MCP_SERVER_VERSION:1.0.0}
+```
+
+本地开发用默认值零配置启动，部署时同一份代码靠环境变量切换——真实生产 MCP 服务普遍采用这种模式。
 
 ---
 
@@ -649,11 +766,11 @@ POST http://localhost:8080/mcp/message   ← JSON-RPC 消息端点
 
 > 目标：证明你的工具真的能被发现、被调用。
 
-### 6.1 用 WebTestClient 直测端点
+### 6.1 启动 Spring 上下文并检查工具注册
 
 > 示例状态：Complete example, not yet verified（依赖坐标在 §5.1 已给出）
 
-不需要真实 AI，`WebTestClient` 直接对 MCP 端点发 JSON-RPC 请求就能验证：
+不需要真实 AI。启动 Spring 上下文并从 `McpSyncServer` 读取工具清单，可以同时验证自动配置、Bean 扫描和工具注册：
 
 ```java
 package com.example.product;
@@ -661,36 +778,34 @@ package com.example.product;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.reactive.server.WebTestClient;
+
+import io.modelcontextprotocol.server.McpSyncServer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ProductMcpServerApplicationTests {
 
     @Autowired
-    private WebTestClient webTestClient;
+    private McpSyncServer mcpServer;
 
     @Test
-    void toolsListReturnsThreeTools() {
-        String request = """
-                {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
-                """;
-
-        webTestClient.post()
-                .uri("/mcp/message")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .exchange()
-                .expectStatus().isOk();
+    void registersThreeTools() {
+        assertThat(mcpServer.listTools())
+                .extracting(tool -> tool.name())
+                .containsExactlyInAnyOrder(
+                        "search_products",
+                        "get_stock",
+                        "recommend_products");
     }
 }
 ```
 
-> 说明：SSE 传输下完整断言需要处理 `/sse` 事件流上的响应（JSON-RPC 响应经 SSE 通道返回），完整示例可参考 Spring AI 官方示例仓库的 weather 应用。本节的 POST 断言验证的是消息端点可达；要断言工具清单内容，推荐用 §6.2 的真实客户端做验收，或对 SSE 流做逐步断言。
+运行 `mvn test`。这个测试不验证 HTTP 传输；SSE 是有状态传输，客户端必须先连接 `/sse`，取得会话对应的消息端点后才能发送 JSON-RPC，不能把 `tools/list` 直接 POST 到固定的 `/mcp/message` 并期待同步拿到工具清单。传输层请用 §6.2 的真实 MCP 客户端验收。
 
 ### 6.2 Claude Desktop 接入
 
-在 Claude Desktop 的配置文件里注册你的 Server（路径因操作系统而异，见客户端文档）：
+若目标客户端支持用 URL 配置远程 MCP Server，可按该客户端当前版本的配置格式注册 SSE 地址。下面只是常见形态，字段名与配置入口应以客户端文档为准：
 
 ```json
 {
@@ -703,7 +818,7 @@ class ProductMcpServerApplicationTests {
 }
 ```
 
-> SSE 传输的客户端配置填 `/sse` 端点地址（`type: sse`）；若使用 Streamable HTTP 传输则填 `http://localhost:8080/mcp`。
+> SSE 传输填 `/sse` 端点地址；若服务端改为 Streamable HTTP，则填 `http://localhost:8080/mcp`。某些桌面客户端的本地配置只接受 `command`/`args` 形式的 stdio Server，此时不能直接套用上面的 URL 配置。
 
 ### 6.3 端到端验收流程
 
@@ -736,18 +851,18 @@ class ProductMcpServerApplicationTests {
 
 Spring AI 提供两个 HTTP 传输 starter：
 
-| 维度     | `spring-ai-starter-mcp-server-webmvc`         | `spring-ai-starter-mcp-server-webflux` |
-| -------- | --------------------------------------------- | -------------------------------------- |
-| 底层     | Servlet（Tomcat）                             | Netty + Reactor                        |
-| 线程模型 | 每请求一线程，工具方法阻塞执行也无妨          | 事件循环，工具方法禁止阻塞             |
-| 适合     | 已有 MVC 技术栈的团队；工具全是同步 JDBC 查询 | 追求高并发长连接；工具方法本身非阻塞   |
-| 本项目   | demo1 用的是 webmvc starter 同款技术栈        | 本指南的贯穿示例                       |
+| 维度     | `spring-ai-starter-mcp-server-webmvc`      | `spring-ai-starter-mcp-server-webflux`                                      |
+| -------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| 底层     | Servlet（默认 Tomcat）                     | Reactor（默认 Reactor Netty）                                               |
+| 线程模型 | Servlet 请求线程；适合同步 HTTP 处理       | 传输层响应式；SYNC 工具默认卸载到 bounded elastic，ASYNC 工具必须保持非阻塞 |
+| 适合     | 已有 MVC 技术栈；希望沿用 Servlet 运维模型 | 已有 WebFlux 技术栈；需要响应式调用链                                       |
+| 本项目   | demo1 用的是 webmvc starter 同款技术栈     | 本指南的贯穿示例                                                            |
 
-**选型核心问题只有一个：你的工具方法是不是阻塞的。** 全是同步 JDBC/HTTP 调用 → webmvc 省心；有真正的非阻塞数据源（如响应式 MongoDB、WebClient 调用链）→ webflux 才能发挥价值。
+**选型不只看工具是否阻塞，还要看现有 Web 技术栈和运维模型。** 全是同步 JDBC/HTTP 调用且应用本来就是 MVC → webmvc 通常更自然；已有 WebFlux 应用时，SYNC 工具仍可承载阻塞调用，但需要关注 bounded elastic 的容量；只有 ASYNC 工具配合真正的非阻塞数据源（如 Reactive MongoDB、WebClient 调用链）时，才能保持端到端非阻塞。
 
 ### 7.2 阻塞陷阱
 
-这是 WebFlux 传输下最容易踩的坑：**ASYNC 模式的工具方法跑在事件循环线程上，一旦阻塞，所有 MCP 会话一起卡死。**
+这是 WebFlux 传输下最容易踩的坑：**ASYNC 模式不会自动替你卸载方法里的阻塞调用；阻塞会占住当前 Reactor/Netty 工作线程，降低同线程所服务会话的吞吐并造成排队或超时。**
 
 ```
   事件循环线程池：Netty 默认很少的线程（通常 = CPU 核数）
@@ -764,21 +879,32 @@ Spring AI 提供两个 HTTP 传输 starter：
 
 | 解法           | 做法                                                                                         | 适用                                 |
 | -------------- | -------------------------------------------------------------------------------------------- | ------------------------------------ |
-| ① 用 SYNC 模式 | `spring.ai.mcp.server.type: SYNC`，同步方法在服务自身线程池执行，阻塞不伤事件循环            | 工具方法天生同步——**默认就该这么选** |
+| ① 用 SYNC 模式 | `spring.ai.mcp.server.type: SYNC`，SDK 默认把同步处理卸载到 Reactor `boundedElastic` 调度器  | 工具方法天生同步——**默认就该这么选** |
 | ② 方法非阻塞化 | 工具方法返回 `Mono`/`Flux`，内部全程用响应式数据源（如响应式 MongoDB、WebClient）            | 数据源本身支持响应式                 |
 | ③ 显式卸载     | ASYNC 模式下把阻塞调用包进 `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` | 个别阻塞调用，量少可控               |
 
 **判断口诀**：工具方法里写了 `jdbcTemplate.query(...)`、`mongoTemplate.find(...)`（阻塞版）或 `restTemplate.getForObject(...)`？那就选 SYNC 模式（解法①），别硬上 ASYNC。异步边界的更深入讨论见 [Spring Boot 多线程指南](spring-boot-multithreading-guide.md)。
 
-### 7.3 版本矩阵
+**ASYNC 的第二个坑：ThreadLocal 上下文丢失。** 你在 WebFilter 里把用户身份或请求头放进 `ThreadLocal`，ASYNC 模式下工具方法跑在另一个线程上，直接 `get()` 读不到——响应式线程切换不会携带 `ThreadLocal`。生产解法是开启 Reactor 上下文传播，把自定义的 ThreadLocal 注册为可传播上下文：
 
-| Spring AI | Spring Boot   | 说明                                                              |
-| --------- | ------------- | ----------------------------------------------------------------- |
-| 1.0.x     | 3.4.x / 3.5.x | 使用 `@Tool`/`@ToolParam` 注解（旧名）                            |
-| **1.1.x** | **3.5.x**     | **本指南版本**；`@McpTool`/`@McpToolParam`；SSE + Streamable HTTP |
-| 2.0.x     | 4.0.x / 4.1.x | Boot 4 专属；SSE 传输标记 deprecated，官方推荐 STREAMABLE         |
+> Illustrative fragment：`RequestHeadersHolder` 是自定义的 `ThreadLocalAccessor` 实现，负责跨线程搬运请求头。
 
-> 本项目的 `pom.xml` 使用 Spring Boot 4.0.6：若未来要在项目内引入 MCP，需用 Spring AI 2.0.x（注解与配置属性以 2.0 文档为准）。矩阵以 Spring AI 官方文档为准，写作时已逐条核实。
+```java
+@PostConstruct
+void started() {
+    ContextRegistry.getInstance()
+            .registerThreadLocalAccessor(new RequestHeadersHolder());
+    Hooks.enableAutomaticContextPropagation();
+}
+```
+
+开启后，无论代码经过多少次线程切换，工具方法里都能取到请求头。某生产金融数据 MCP 服务正是这么做的：WebFilter 写入请求头 → 工具执行线程随时可读。它还在同一个 `@PostConstruct` 里统一了 JVM 时区（`TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))`）——工具要返回时间数据时，先统一时区可以避免客户端拿到不一致的时间。
+
+### 7.3 版本边界
+
+本指南只验证 Spring AI 1.1.7 + Spring Boot 3.5.14，不把其他发布线的注解、配置属性和传输默认值混入示例。Spring AI 的版本与 Spring Boot 基线是易变信息，升级时应以目标 Spring AI 版本的官方系统要求和升级说明为准。
+
+> 本项目根 `pom.xml` 使用 Spring Boot 4.0.6，不能直接复制本指南的 1.1.7 依赖组合。若要在本项目内引入 MCP，应先选择官方声明兼容 Boot 4.0.6 的 Spring AI 版本，再按该版本文档核对注解包名、配置属性与传输支持情况。
 
 ### 7.4 延伸阅读
 
@@ -786,3 +912,4 @@ Spring AI 提供两个 HTTP 传输 starter：
 - WebFlux 技术栈的另一个应用场景（Spring Cloud Gateway）：[微服务指南](spring-cloud-microservices-guide.md)
 - 响应式编程基础：WebFlux/Reactor 深入指南（规划中，本节是它的上游引子）
 - 官方资料：[Spring AI MCP Server 文档](https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html)、[MCP 规范](https://modelcontextprotocol.io/)
+- 大规模工具管理：注解扫描之外还有编程式注册（把 Service 方法反射包装为 `ToolCallback` 动态注册），适合数百个工具、需要运行时增删的生产服务

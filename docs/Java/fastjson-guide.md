@@ -27,13 +27,13 @@
 
 **fastjson** 是阿里巴巴开源的 Java JSON 处理库，在**国内遗留系统中广泛使用**。它与 Jackson 做同一件事——Java 对象与 JSON 字符串互转——但 API 风格截然不同：
 
-| 维度 | fastjson 1.2.83 | Jackson（见 [jackson-guide.md](jackson-guide.md)） |
-|---|---|---|
-| 核心入口 | `JSON` 静态方法 + `JSONObject`/`JSONArray` | `ObjectMapper` 实例 |
-| 中间结构 | `JSONObject`（本质是 `Map`）、`JSONArray`（本质是 `List`） | `JsonNode` 树 |
-| 泛型反序列化 | `TypeReference` 匿名子类 | `TypeReference`（同理） |
-| 字段映射 | `@JSONField(name=...)` | `@JsonProperty` |
-| null 默认行为 | 对象 null 字段默认输出；Map 的 null 值默认**不**输出 | 默认都不输出 |
+| 维度          | fastjson 1.2.83                                            | Jackson（见 [jackson-guide.md](jackson-guide.md)） |
+| ------------- | ---------------------------------------------------------- | -------------------------------------------------- |
+| 核心入口      | `JSON` 静态方法 + `JSONObject`/`JSONArray`                 | `ObjectMapper` 实例                                |
+| 中间结构      | `JSONObject`（本质是 `Map`）、`JSONArray`（本质是 `List`） | `JsonNode` 树                                      |
+| 泛型反序列化  | `TypeReference` 匿名子类                                   | `TypeReference`（同理）                            |
+| 字段映射      | `@JSONField(name=...)`                                     | `@JsonProperty`                                    |
+| null 默认行为 | 对象 null 字段默认输出；Map 的 null 值默认**不**输出       | 默认都不输出                                       |
 
 **一句话心智模型：** fastjson 的一切 API 围绕三个类展开——`JSON` 负责转换，`JSONObject`/`JSONArray` 负责以 Map/List 的视角读写 JSON 结构。读懂项目里的 fastjson 用法，就是识别这三者各司其职。
 
@@ -162,15 +162,15 @@ public class JSONObject extends JSON implements Map<String, Object>, ... {}
 
 ### 4.1 常用取值方法
 
-| 方法 | 返回类型 | 说明 |
-|---|---|---|
-| `getString(key)` | String | 取字符串值，key 不存在返回 null |
-| `getIntValue(key)` / `getLongValue(key)` | 基本类型 | 取数值（不存在返回 0，注意区分） |
-| `getBooleanValue(key)` | boolean | 取布尔值 |
-| `getJSONObject(key)` | JSONObject | 取嵌套对象 |
-| `getJSONArray(key)` | JSONArray | 取嵌套数组 |
-| `containsKey(key)` | boolean | 判断 key 是否存在（Map 方法） |
-| `put(key, value)` / `remove(key)` | — | 写入 / 删除（Map 方法） |
+| 方法                                     | 返回类型   | 说明                             |
+| ---------------------------------------- | ---------- | -------------------------------- |
+| `getString(key)`                         | String     | 取字符串值，key 不存在返回 null  |
+| `getIntValue(key)` / `getLongValue(key)` | 基本类型   | 取数值（不存在返回 0，注意区分） |
+| `getBooleanValue(key)`                   | boolean    | 取布尔值                         |
+| `getJSONObject(key)`                     | JSONObject | 取嵌套对象                       |
+| `getJSONArray(key)`                      | JSONArray  | 取嵌套数组                       |
+| `containsKey(key)`                       | boolean    | 判断 key 是否存在（Map 方法）    |
+| `put(key, value)` / `remove(key)`        | —          | 写入 / 删除（Map 方法）          |
 
 ### 4.2 嵌套取值实战
 
@@ -296,12 +296,12 @@ private String fcCompanyCode;
 
 ### 7.2 其他常用属性速查
 
-| 属性 | 作用 |
-|---|---|
-| `name` | JSON 中的字段名 |
-| `serialize` / `deserialize` | 是否参与序列化 / 反序列化 |
-| `format` | 日期格式，如 `"yyyy-MM-dd HH:mm:ss"` |
-| `ordinal` | 序列化时的字段顺序（数值小的在前） |
+| 属性                        | 作用                                 |
+| --------------------------- | ------------------------------------ |
+| `name`                      | JSON 中的字段名                      |
+| `serialize` / `deserialize` | 是否参与序列化 / 反序列化            |
+| `format`                    | 日期格式，如 `"yyyy-MM-dd HH:mm:ss"` |
+| `ordinal`                   | 序列化时的字段顺序（数值小的在前）   |
 
 > 注意：fastjson 1.x 的 `@JSONField` 与 Jackson 的 `@JsonProperty` 互不识别，双库混用时要么各自声明、要么只让一个库接触该实体类。
 
@@ -311,9 +311,9 @@ private String fcCompanyCode;
 
 fastjson 把"行为开关"拆成两个枚举，方向不同：
 
-| 枚举 | 生效方向 | 常见用法 |
-|---|---|---|
-| `com.alibaba.fastjson.parser.Feature` | **解析**（JSON → 对象） | `JSON.parseObject(json, clazz, Feature.OrderedField)` |
+| 枚举                                                | 生效方向                  | 常见用法                                                      |
+| --------------------------------------------------- | ------------------------- | ------------------------------------------------------------- |
+| `com.alibaba.fastjson.parser.Feature`               | **解析**（JSON → 对象）   | `JSON.parseObject(json, clazz, Feature.OrderedField)`         |
 | `com.alibaba.fastjson.serializer.SerializerFeature` | **序列化**（对象 → JSON） | `JSON.toJSONString(obj, SerializerFeature.WriteMapNullValue)` |
 
 ### 8.1 Feature.OrderedField：保持字段顺序
@@ -347,12 +347,12 @@ fastjson 有一个容易踩的**不对称默认**：
 
 ### 8.3 其他常用 SerializerFeature 速查
 
-| 开关 | 作用 |
-|---|---|
-| `WriteMapNullValue` | Map 的 null 值也输出（见上） |
-| `WriteNullStringAsEmpty` | null 字符串输出为 `""` |
-| `PrettyFormat` | 美化输出（带缩进换行，便于日志阅读） |
-| `WriteDateUseDateFormat` | 日期按全局 `JSON.DEFFAULT_DATE_FORMAT` 输出 |
+| 开关                             | 作用                                                  |
+| -------------------------------- | ----------------------------------------------------- |
+| `WriteMapNullValue`              | Map 的 null 值也输出（见上）                          |
+| `WriteNullStringAsEmpty`         | null 字符串输出为 `""`                                |
+| `PrettyFormat`                   | 美化输出（带缩进换行，便于日志阅读）                  |
+| `WriteDateUseDateFormat`         | 日期按全局 `JSON.DEFFAULT_DATE_FORMAT` 输出           |
 | `DisableCircularReferenceDetect` | 关闭循环引用检测（默认开启，检测到循环会输出 `$ref`） |
 
 ---
@@ -378,13 +378,13 @@ public static <T> T clone(T obj) {
 
 ### 9.2 代价与边界
 
-| 问题 | 说明 |
-|---|---|
-| 性能 | 字符串序列化 + 反射重建，比手写 copy 慢一个数量级；大对象批量 clone 不划算 |
-| 精度 | `BigDecimal` 默认按字符串输出、无损；但需确认项目没改全局日期/数字格式 |
-| 构造器 | 目标类型必须有**无参构造**（fastjson 反射实例化） |
-| 字段匹配 | 依赖字段名精确匹配（有 `@JSONField(name=...)` 时按映射名走），无匹配字段会静默丢弃 |
-| 不可序列化成员 | `transient`、`static` 字段不参与，内部类/代理类可能失败 |
+| 问题           | 说明                                                                               |
+| -------------- | ---------------------------------------------------------------------------------- |
+| 性能           | 字符串序列化 + 反射重建，比手写 copy 慢一个数量级；大对象批量 clone 不划算         |
+| 精度           | `BigDecimal` 默认按字符串输出、无损；但需确认项目没改全局日期/数字格式             |
+| 构造器         | 目标类型必须有**无参构造**（fastjson 反射实例化）                                  |
+| 字段匹配       | 依赖字段名精确匹配（有 `@JSONField(name=...)` 时按映射名走），无匹配字段会静默丢弃 |
+| 不可序列化成员 | `transient`、`static` 字段不参与，内部类/代理类可能失败                            |
 
 ### 9.3 何时用
 
@@ -460,14 +460,16 @@ JSON.toJSONString(obj, SerializerFeature.WriteClassName); // 会产生 {"@type":
 ```java
 ParserConfig.getGlobalInstance().setSafeMode(true);   // 代码方式
 ```
+
 ```
 -Dfastjson.parser.safeMode=true                        // JVM 启动参数
 ```
+
 ```
 fastjson.parser.safeMode=true                          // 类路径 fastjson.properties
 ```
 
-   safeMode 开启后**完全禁用 AutoType**，白名单也不生效——这是最硬的开关。
+safeMode 开启后**完全禁用 AutoType**，白名单也不生效——这是最硬的开关。
 
 2. **如业务必须用 AutoType**，用白名单而非全开：`ParserConfig.getGlobalInstance().addAccept("com.yourcompany.")` 只放行自己包（三选一：代码 / JVM 参数 / `fastjson.properties`）。
 
