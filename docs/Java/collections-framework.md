@@ -5,6 +5,15 @@
 
 > 本指南以 JDK 17+ 为基线，只收录日常开发中常用的集合及其 API；文末提供选型速查表。
 
+**本指南结构**：
+
+- **List**：ArrayList、CopyOnWriteArrayList、不可变 List
+- **Set**：HashSet、LinkedHashSet、并发 Set（`ConcurrentHashMap.newKeySet()`）、不可变 Set
+- **Map**：HashMap、LinkedHashMap、ConcurrentHashMap、不可变 Map
+- **Queue**：ArrayDeque、LinkedBlockingQueue
+- **横切主题**：集合工具类（Collections）、集合初始化
+- **选型速查表**：按需求快速定位合适的集合
+
 ---
 
 ## List
@@ -19,28 +28,7 @@
 - **长度固定**：数组的长度是固定的，而集合的长度是可变的；
 - **操作不丰富**：数组的存储操作比较复杂，插入、删除、查找、排序等都需要自己写代码。而集合的存储操作比较简单，有现成的 `add`、`remove`、`contains` 方法；
 
-因此，在实际编码中，除非有明确的性能或内存顾虑，否则优先使用集合。
-
-```java
-import java.util.ArrayList;
-import java.util.List;
-
-public class User {
-    static void main() {
-        List<String> students = new ArrayList<>();
-        students.add("张三");
-        students.add("李四");
-        students.add("王五");
-        students.remove("李四");
-
-        boolean hasZhang = students.contains("张三");
-        int size = students.size();
-
-        System.out.println(hasZhang);
-        System.out.println(size);
-    }
-}
-```
+因此，在实际编码中，除非有明确的性能或内存顾虑，否则优先使用集合。完整演示见下方「ArrayList 常用 API」的示例代码。
 
 #### ArrayList 常用 API
 
@@ -67,68 +55,42 @@ public class User {
 | `toArray(IntFunction generator)` | 转换成指定类型的数组，如 `toArray(String[]::new)` |
 
 ```java
-List<Integer> list = new ArrayList<>(Arrays.asList(3, 1, 4, 1, 5));
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
-// 条件删除：移除所有偶数
-list.removeIf(n -> n % 2 == 0);
+public class ArrayListDemo {
+    public static void main(String[] args) {
+        // 基本操作：添加、删除、判断
+        List<String> students = new ArrayList<>();
+        students.add("张三");
+        students.add("李四");
+        students.add("王五");
+        students.remove("李四");
 
-// 原地排序
-list.sort(Comparator.naturalOrder());
+        boolean hasZhang = students.contains("张三");
+        int size = students.size();
+        System.out.println(hasZhang); // true
+        System.out.println(size);     // 2
 
-// 每个元素翻倍
-list.replaceAll(n -> n * 2);
+        // 条件删除：移除所有偶数
+        List<Integer> list = new ArrayList<>(List.of(3, 1, 4, 1, 5));
+        list.removeIf(n -> n % 2 == 0);
 
-// 视图操作：只操作前 2 个元素
-List<Integer> head = list.subList(0, 2);
-head.clear(); // 原 list 的前 2 个元素也被删除
+        // 原地排序
+        list.sort(Comparator.naturalOrder());
 
-// 转成指定类型数组
-String[] arr = List.of("A", "B").toArray(String[]::new);
-```
+        // 每个元素翻倍
+        list.replaceAll(n -> n * 2);
 
----
+        // 视图操作：只操作前 2 个元素
+        List<Integer> head = list.subList(0, 2);
+        head.clear(); // 原 list 的前 2 个元素也被删除
 
-### LinkedList
-
-LinkedList 是一个双向链表，同时实现了 `List` 和 `Deque`（双端队列）接口，既可以当 List 用，也可以当队列/栈用。
-
-#### ArrayList vs LinkedList
-
-| 特性          | ArrayList | LinkedList   |
-| ------------- | --------- | ------------ |
-| 底层结构      | 动态数组  | 双向链表     |
-| 随机访问      | O(1) ⚡快 | O(n) 慢      |
-| 头部插入/删除 | O(n) 慢   | O(1) ⚡快    |
-| 尾部插入/删除 | O(1) ⚡快 | O(1) ⚡快    |
-| 内存占用      | 连续空间  | 额外指针开销 |
-| 使用场景      | 查询多    | 增删多       |
-
-> **特殊场景**：频繁头部操作用 LinkedList，其余场景使用 ArrayList。
-
-#### Deque / Queue 常用 API
-
-LinkedList 作为 `List` 的常用 API 与 ArrayList 相同，此外还拥有双端队列/栈操作方法：
-
-| 方法                               | 说明                                        |
-| ---------------------------------- | ------------------------------------------- |
-| `addFirst(E e)` / `addLast(E e)`   | 在头部 / 尾部添加元素                       |
-| `removeFirst()` / `removeLast()`   | 移除并返回头部 / 尾部元素（空时抛异常）     |
-| `getFirst()` / `getLast()`         | 获取头部 / 尾部元素（不移除）               |
-| `offer(E e)` / `poll()` / `peek()` | 队列入队 / 出队 / 查看队首（空时返回 null） |
-| `push(E e)` / `pop()` / `peek()`   | 栈压入 / 弹出 / 查看栈顶                    |
-
-```java
-LinkedList<String> deque = new LinkedList<>();
-
-// 当队列用：先进先出
-deque.offer("task-1");
-deque.offer("task-2");
-String task = deque.poll(); // "task-1"
-
-// 当栈用：后进先出
-deque.push("A");
-deque.push("B");
-String top = deque.pop(); // "B"
+        // 转成指定类型数组（List.of 详见下文「不可变 List」）
+        String[] arr = List.of("A", "B").toArray(String[]::new);
+    }
+}
 ```
 
 ---
@@ -171,68 +133,84 @@ for (EventListener l : listeners) {
 
 ---
 
+### 不可变 List
+
+不可变 List 创建后不能增删改，适合用作常量配置、方法返回值（防止调用方篡改）等场景。
+
+| 创建方式                  | 说明                                |
+| ------------------------- | ----------------------------------- |
+| `List.of(e1, e2, ...)`    | 直接创建不可变列表，元素不允许 null |
+| `List.copyOf(collection)` | 从已有集合复制出不可变副本          |
+
+```java
+List<String> levels = List.of("INFO", "WARN", "ERROR");
+// levels.add("DEBUG"); // UnsupportedOperationException
+
+// 从已有集合复制
+List<String> copy = List.copyOf(mutableList);
+
+// Stream 收集为不可变列表（JDK 16+）
+List<String> names = users.stream()
+        .map(User::getName)
+        .toList();
+```
+
+---
+
 ## Set
 
 ### HashSet
 
 HashSet 用于存储不重复的元素，且不保证顺序，常用于需要快速去重、快速包含性检查的场景。
 
+#### 常用方法
+
+| 方法                         | 说明                           |
+| ---------------------------- | ------------------------------ |
+| `add(E e)`                   | 添加元素，若已存在则返回 false |
+| `remove(Object o)`           | 移除元素，存在则返回 true      |
+| `removeIf(Predicate filter)` | 移除所有满足条件的元素         |
+| `contains(Object o)`         | 判断是否包含该元素             |
+| `addAll(Collection c)`       | 批量添加元素                   |
+| `forEach(Consumer action)`   | 遍历每个元素                   |
+| `size()`                     | 返回元素个数                   |
+| `isEmpty()`                  | 判断是否为空                   |
+| `clear()`                    | 清空所有元素                   |
+
+#### 常见用途
+
 ```java
+// 基本操作
 Set<Long> ids = new HashSet<>();
 ids.add(1L);
 ids.add(2L);
 ids.add(1L); // 重复，不会添加
+System.out.println(ids.size());       // 2
+System.out.println(ids.contains(1L)); // true
 
-System.out.println(ids.size());        // 2
-System.out.println(ids.contains(1L));  // true
+// 1. 去重
+List<Long> list = List.of(1L, 2L, 2L, 3L);
+Set<Long> uniqueIds = new HashSet<>(list); // [1, 2, 3]
+
+// 2. 判断是否存在（快速）
+Set<String> bannedWords = new HashSet<>(List.of("spam", "ad"));
+if (bannedWords.contains(word)) {
+    // 过滤
+}
+
+// 3. 集合运算
+Set<String> set1 = new HashSet<>(List.of("A", "B", "C"));
+Set<String> set2 = new HashSet<>(List.of("B", "C", "D"));
+
+// 交集
+set1.retainAll(set2); // [B, C]
+
+// 并集
+set1.addAll(set2); // [A, B, C, D]
+
+// 差集
+set1.removeAll(set2); // [A]
 ```
-
-#### 常用方法
-
-| 方法                       | 说明                           |
-| -------------------------- | ------------------------------ |
-| `add(E e)`                 | 添加元素，若已存在则返回 false |
-| `remove(Object o)`         | 移除元素，存在则返回 true      |
-| `contains(Object o)`       | 判断是否包含该元素             |
-| `addAll(Collection c)`     | 批量添加元素                   |
-| `forEach(Consumer action)` | 遍历每个元素                   |
-| `size()`                   | 返回元素个数                   |
-| `isEmpty()`                | 判断是否为空                   |
-| `clear()`                  | 清空所有元素                   |
-| `iterator()`               | 返回迭代器（元素顺序不固定）   |
-
-#### HashSet vs LinkedHashSet vs TreeSet
-
-| 类型          | 底层结构    | 有序性   | 性能     | 使用场景       |
-| ------------- | ----------- | -------- | -------- | -------------- |
-| HashSet       | 哈希表      | 无序     | O(1)     | 去重、查找     |
-| LinkedHashSet | 哈希表+链表 | 插入顺序 | O(1)     | 需保持插入顺序 |
-| TreeSet       | 红黑树      | 自然排序 | O(log n) | 需排序         |
-
-```java
-// HashSet - 无序
-Set<Integer> hashSet = new HashSet<>();
-hashSet.add(3);
-hashSet.add(1);
-hashSet.add(2);
-System.out.println(hashSet); // [1, 2, 3] 或其他顺序
-
-// LinkedHashSet - 插入顺序
-Set<Integer> linkedSet = new LinkedHashSet<>();
-linkedSet.add(3);
-linkedSet.add(1);
-linkedSet.add(2);
-System.out.println(linkedSet); // [3, 1, 2]
-
-// TreeSet - 自然排序
-Set<Integer> treeSet = new TreeSet<>();
-treeSet.add(3);
-treeSet.add(1);
-treeSet.add(2);
-System.out.println(treeSet); // [1, 2, 3]
-```
-
----
 
 ### LinkedHashSet
 
@@ -271,31 +249,20 @@ int count = onlineUserIds.size();
 
 常用 API 与 HashSet 相同（`add` / `remove` / `contains` / `size` / `iterator`），常用于并发去重、在线用户集合、已处理任务记录等场景。
 
-### Set 常见用途
+---
+
+### 不可变 Set
+
+| 创建方式                 | 说明                                            |
+| ------------------------ | ----------------------------------------------- |
+| `Set.of(e1, e2, ...)`    | 直接创建不可变集合，元素不允许 null、不允许重复 |
+| `Set.copyOf(collection)` | 从已有集合复制出不可变副本                      |
 
 ```java
-// 1. 去重
-List<Long> ids = Arrays.asList(1L, 2L, 2L, 3L);
-Set<Long> uniqueIds = new HashSet<>(ids); // [1, 2, 3]
+Set<String> roles = Set.of("admin", "user");
+// roles.add("guest"); // UnsupportedOperationException
 
-// 2. 判断是否存在（快速）
-Set<String> bannedWords = new HashSet<>(Arrays.asList("spam", "ad"));
-if (bannedWords.contains(word)) {
-    // 过滤
-}
-
-// 3. 集合运算
-Set<String> set1 = new HashSet<>(Arrays.asList("A", "B", "C"));
-Set<String> set2 = new HashSet<>(Arrays.asList("B", "C", "D"));
-
-// 交集
-set1.retainAll(set2); // [B, C]
-
-// 并集
-set1.addAll(set2); // [A, B, C, D]
-
-// 差集
-set1.removeAll(set2); // [A]
+Set<String> copy = Set.copyOf(existingSet);
 ```
 
 ---
@@ -306,165 +273,83 @@ set1.removeAll(set2); // [A]
 
 哈希表（Hash Table）是一种数据结构，它利用哈希函数将键映射到特定的值，使用键快速检索数据。存储的数据结构是无序的。
 
-#### 1. 存取数据
+#### 常用 API
 
-**`put(key, value)`**
+| 方法                                                  | 说明                                   |
+| ----------------------------------------------------- | -------------------------------------- |
+| `put(K key, V value)`                                 | 存入键值对，相同 key 会覆盖旧值        |
+| `putIfAbsent(K key, V value)`                         | key 不存在时才放入，已存在则不覆盖     |
+| `get(Object key)`                                     | 根据 key 取值，不存在返回 null         |
+| `getOrDefault(Object key, V default)`                 | 取不到时返回默认值，避免 NPE           |
+| `remove(Object key)`                                  | 根据 key 移除键值对                    |
+| `containsKey(Object key)`                             | 是否包含指定 key                       |
+| `containsValue(Object value)`                         | 是否包含指定 value                     |
+| `entrySet()`                                          | 返回所有键值对的 Set 视图              |
+| `forEach(BiConsumer action)`                          | 遍历所有键值对                         |
+| `keySet()`                                            | 返回所有 key 的 Set 视图               |
+| `values()`                                            | 返回所有 value 的 Collection 视图      |
+| `putAll(Map m)`                                       | 批量放入另一个 Map 的所有键值对        |
+| `replace(K key, V value)`                             | 替换已存在 key 的值                    |
+| `replaceAll(BiFunction function)`                     | 对所有值批量转换                       |
+| `merge(K key, V value, BiFunction remappingFunction)` | key 不存在直接放入，已存在则合并新旧值 |
+| `computeIfAbsent(K key, Function mappingFunction)`    | key 不存在时计算 value 并存入          |
+| `size()`                                              | 返回键值对数量                         |
+| `isEmpty()`                                           | 判断是否为空                           |
+| `clear()`                                             | 清空所有键值对                         |
+
+#### 基本操作
 
 ```java
-HashMap<String, String> map = new HashMap<>();
+Map<String, String> map = new HashMap<>();
 map.put("1", "One");
 map.put("2", "Two");
 map.put("3", "Three");
+
+String value = map.get("1");            // "One"
+map.remove("2");                        // 移除 key="2" 的键值对
+boolean has = map.containsKey("3");     // true
 ```
 
-**`putIfAbsent(key, value)`** — 不存在时才放入
+#### 安全取值
 
 ```java
-// key 不存在时放入并返回 null；已存在时返回旧值
-map.putIfAbsent("1", "一");
-```
-
-**`get(key)`** — 取值
-
-```java
-String value = map.get("1");
-```
-
-**`getOrDefault(key, defaultValue)`** — 安全取值
-
-取不到值时返回默认值，避免 NPE。
-
-```java
-// 安全取值（避免 NPE）
+// 取不到时返回默认值，避免 NPE
 String name = userMap.getOrDefault("name", "未知用户");
-```
 
-**`computeIfAbsent(key, mappingFunction)`** — 缓存取值
-
-当 Key 不存在时，执行函数计算 Value 并存入。
-
-```java
-// 实际场景：从缓存中取数据，若无则查数据库并缓存
+// key 不存在时计算并存入（典型场景：缓存）
 User user = cacheMap.computeIfAbsent("user:1001", key -> userService.findFromDB(key));
 ```
 
-#### 2. 删除数据
-
-**`remove(key)`**
+#### 遍历
 
 ```java
-HashMap<String, String> map = new HashMap<>();
-map.put("1", "One");
-map.remove("1");
-```
-
-#### 3. 判断存在
-
-**`containsKey(key)` / `containsValue(value)`**
-
-```java
-HashMap<String, String> map = new HashMap<>();
-map.put("1", "One");
-if (map.containsKey("1")) {
-    System.out.println("map contains key 1");
-}
-```
-
-#### 4. 遍历数据
-
-**`entrySet`** — 遍历所有键值对，返回值类型 `Set<Map.Entry<K, V>>`
-
-> 方法返回的是原 Map 的视图，修改视图会直接影响原 Map。
-
-```java
-Map<String, String> userMap = redisRepository.hGetAll("user:1001");
-
-// 方式一：传统迭代（最常用）
+// 方式一：for-each entrySet（最常用）
 for (Map.Entry<String, String> entry : userMap.entrySet()) {
-    String field = entry.getKey();   // 比如 "name"
-    String value = entry.getValue(); // 比如 "\"张三\""
-    System.out.println(field + " -> " + value);
+    System.out.println(entry.getKey() + " -> " + entry.getValue());
 }
 
-// 方式二：Lambda（更推荐）
-userMap.entrySet().forEach(entry -> {
-    System.out.println(entry.getKey() + " -> " + entry.getValue());
-});
-```
-
-**`forEach`** — 直接遍历键值对
-
-```java
+// 方式二：forEach（更简洁）
 userMap.forEach((key, value) -> System.out.println(key + " -> " + value));
 ```
 
-**`keySet`** — 遍历所有 Key，返回值类型 `Set<K>`
+#### 合并与更新
 
 ```java
-HashMap<String, Integer> scores = new HashMap<>();
-scores.put("张三", 95);
-scores.put("李四", 88);
-scores.put("王五", 92);
-scores.put("赵六", 78);
+// putAll：批量合并（相同 key 会被覆盖）
+Map<String, String> target = new HashMap<>(Map.of("name", "张三"));
+Map<String, String> source = Map.of("name", "李四", "age", "25");
+target.putAll(source); // {name=李四, age=25}
 
-Set<String> keys = scores.keySet();
-```
+// replace：替换已存在 key 的值
+map.replace("苹果", 10);
 
-**`values`** — 遍历所有 Value，返回值类型 `Collection<V>`
+// replaceAll：批量转换所有值
+prices.replaceAll((name, price) -> price * 0.8); // 所有商品打 8 折
 
-```java
-Collection<Integer> values = scores.values();
-```
-
-#### 5. 批量合并
-
-**`putAll()`** — 将另一个 Map 的所有键值对复制进来。
-
-```java
-HashMap<String, String> target = new HashMap<>();
-target.put("name", "张三");
-
-HashMap<String, String> source = new HashMap<>();
-source.put("name", "李四");
-source.put("age", "25");
-
-target.putAll(source);
-System.out.println(target); // 输出：{name=李四, age=25}
-// 注意："name" 的值从 "张三" 被覆盖为 "李四"
-```
-
-#### 6. 条件更新
-
-**`replace(key, value)`**
-
-```java
-HashMap<String, Integer> map = new HashMap<>();
-map.put("苹果", 5);
-map.put("香蕉", 3);
-map.put("橙子", 7);
-
-System.out.println("替换前: " + map);
-
-// 将"苹果"的值从 5 替换为 10
-Integer oldValue = map.replace("苹果", 10);
-```
-
-**`replaceAll(BiFunction)`** — 对所有值批量转换
-
-```java
-// 所有商品价格打 8 折
-prices.replaceAll((name, price) -> price * 0.8);
-```
-
-**`merge(key, value, remappingFunction)`** — 合并新旧值
-
-key 不存在时直接放入给定值；已存在时用函数合并新旧值。典型场景：计数、分组累加。
-
-```java
+// merge：key 不存在直接放入，已存在则合并（典型场景：计数、分组累加）
 Map<String, Integer> wordCount = new HashMap<>();
 for (String word : words) {
-    // 不存在则置 1，已存在则 +1
-    wordCount.merge(word, 1, Integer::sum);
+    wordCount.merge(word, 1, Integer::sum); // 不存在则置 1，已存在则 +1
 }
 ```
 
@@ -472,112 +357,136 @@ for (String word : words) {
 
 ### LinkedHashMap
 
-LinkedHashMap 继承自 HashMap，但在 HashMap 的基础上内部维护了一个双向链表，用于记录元素的插入顺序。因此当需要保持插入顺序用 LinkedHashMap。
+LinkedHashMap 继承自 HashMap，在 HashMap 的基础上内部额外维护了一个双向链表，用于记录元素的**插入顺序**。因此遍历 LinkedHashMap 时，顺序与插入顺序一致。
+
+**适用场景**：
+
+- 需要保持插入顺序（如配置项、JSON 字段顺序）
+- 缓存实现（LRU 算法）
+- 需要可预测的遍历顺序
+
+#### 与 HashMap 的区别
 
 ```java
-import java.util.*;
+// HashMap：无序
+Map<String, Integer> hashMap = new HashMap<>();
+hashMap.put("C", 3);
+hashMap.put("A", 1);
+hashMap.put("B", 2);
+System.out.println(hashMap); // {A=1, B=2, C=3} 或其他顺序
 
-public class LinkedHashMapDemo {
-    public static void main(String[] args) {
-        // 默认构造器，按插入顺序
-        LinkedHashMap<String, Integer> map = new LinkedHashMap<>();
-        map.put("张三", 85);
-        map.put("李四", 92);
-        map.put("王五", 78);
-
-        // 遍历顺序与插入顺序一致
-        // 返回所有 Entry 的 Set 视图
-        for (Map.Entry<String, Integer> entry : map.entrySet()) {
-            System.out.println(entry.getKey() + " -> " + entry.getValue());
-        }
-    }
-}
+// LinkedHashMap：按插入顺序
+Map<String, Integer> linkedMap = new LinkedHashMap<>();
+linkedMap.put("C", 3);
+linkedMap.put("A", 1);
+linkedMap.put("B", 2);
+System.out.println(linkedMap); // {C=3, A=1, B=2}
 ```
+
+#### 常见用途
+
+```java
+// 1. 保持配置项顺序
+Map<String, String> config = new LinkedHashMap<>();
+config.put("host", "localhost");
+config.put("port", "8080");
+config.put("timeout", "30");
+// 遍历时顺序与插入时一致
+
+// 2. JSON 字段顺序保持（配合 Jackson 等库）
+Map<String, Object> json = new LinkedHashMap<>();
+json.put("id", 1);
+json.put("name", "张三");
+json.put("age", 25);
+// 序列化后字段顺序与 put 顺序一致
+
+// 3. LRU 缓存（访问顺序模式）
+// 构造器参数：initialCapacity, loadFactor, accessOrder(true=按访问顺序)
+Map<Integer, String> lruCache = new LinkedHashMap<>(16, 0.75f, true);
+lruCache.put(1, "A");
+lruCache.put(2, "B");
+lruCache.get(1); // 访问 key=1，它会被移到链表末尾
+// 此时遍历顺序：{2=B, 1=A}（1 被访问后移到最后）
+```
+
+常用 API 与 HashMap 完全相同，无需额外学习。
 
 ---
 
 ### ConcurrentHashMap
 
-ConcurrentHashMap 是 Java 并发包中最常用的线程安全 Map。不允许 null 键和 null 值。
+ConcurrentHashMap 是 Java 并发包中最常用的线程安全 Map。不允许 null 键和 null 值。需要并发 Set 时可用其 `newKeySet()`，见 Set 章节。
+
+**常用 API 与 HashMap 完全相同**，区别在于：
+
+- **线程安全**：所有操作都是原子的
+- **不允许 null**：键和值都不允许为 null
+- **迭代器 fail-safe**：不会抛出 `ConcurrentModificationException`
+
+#### 基本操作
 
 ```java
-import java.util.concurrent.ConcurrentHashMap;
-
-// 创建
 ConcurrentHashMap<String, String> map = new ConcurrentHashMap<>();
-
-// 基本操作
 map.put("key1", "value1");
 String value = map.get("key1");
 map.remove("key1");
+```
 
-// 原子操作
-// 如果不存在则添加
+#### 原子操作
+
+```java
+// putIfAbsent：key 不存在时才放入（线程安全）
 map.putIfAbsent("key1", "value1");
 
-// 替换值
+// replace：原子替换
 map.replace("key1", "newValue");
 map.replace("key1", "oldValue", "newValue"); // 只有旧值匹配才替换
 ```
 
 #### 计算操作
 
-**1. `compute`** — 总是执行计算函数，无论 key 是否存在
-
-- 参数：`(key, BiFunction<key, oldValue, newValue>)`
-- 如果返回 null，则删除该 key；否则更新为返回值
-
 ```java
-map.compute("key1", (k, v) -> {
-    // 如果v为null，说明key不存在，返回1
-    if (v == null) {
-        return "1"; // 初始值
-    } else {
-        return String.valueOf(Integer.parseInt(v) + 1); // 递增
-    }
+// compute：总是执行计算（无论 key 是否存在）
+map.compute("counter", (k, v) -> {
+    return v == null ? 1 : v + 1; // 值不存在置 1，否则加 1
 });
-// 典型场景：计数器（无论key是否存在都能工作）
-```
 
-**2. `computeIfAbsent`** — 仅当 key 不存在时才执行计算
+// computeIfAbsent：key 不存在时才计算（典型场景：懒加载缓存）
+map.computeIfAbsent("user:1001", key -> userService.findFromDB(key));
 
-- 参数：`(key, Function<key, value>)`
-- 如果 key 已存在，直接返回旧值；否则执行函数并存入
-
-```java
-map.computeIfAbsent("key1", k -> {
-    // 这个函数只在key不存在时调用
-    return "defaultValue"; // 或从数据库查询等耗时操作
-});
-// 典型场景：懒加载缓存（避免重复计算）
-```
-
-**3. `computeIfPresent`** — 仅当 key 存在时才执行计算
-
-- 参数：`(key, BiFunction<key, oldValue, newValue>)`
-- 如果 key 不存在，什么都不做；如果返回 null，则删除该 key
-
-```java
-map.computeIfPresent("key1", (k, v) -> {
-    // v一定不为null（因为key存在）
-    return v + "_updated"; // 或返回null来删除
-});
-// 典型场景：更新已有值（确保key存在才操作）
+// computeIfPresent：key 存在时才计算（典型场景：更新已有值）
+map.computeIfPresent("key1", (k, v) -> v + "_updated");
 ```
 
 #### 合并操作
 
 ```java
-map.merge("key1", "1", (oldVal, newVal) ->
-    String.valueOf(Integer.parseInt(oldVal) + Integer.parseInt(newVal)));
+// merge：key 不存在直接放入，已存在则合并（典型场景：计数、累加）
+map.merge("counter", 1, Integer::sum); // 不存在置 1，已存在则 +1
 ```
 
-#### newKeySet() — 线程安全的 Set
+---
 
-`ConcurrentHashMap.newKeySet()` 返回一个由 ConcurrentHashMap 支撑的线程安全 Set，是需要并发 Set 时的首选（详见 Set 章节）：
+### 不可变 Map
+
+| 创建方式                              | 说明                                                    |
+| ------------------------------------- | ------------------------------------------------------- |
+| `Map.of(k1, v1, k2, v2, ...)`         | 直接创建不可变 Map（最多 10 组键值对），键值不允许 null |
+| `Map.ofEntries(Map.entry(k, v), ...)` | 超过 10 组键值对时使用                                  |
+| `Map.copyOf(map)`                     | 从已有 Map 复制出不可变副本                             |
 
 ```java
-Set<String> set = ConcurrentHashMap.newKeySet();
+Map<String, Integer> config = Map.of("timeout", 30, "retry", 3);
+// config.put("timeout", 60); // UnsupportedOperationException
+
+// 每个 Map.entry 打包一组键值对：
+//   Map.entry("a", 1)  →  "a"=1
+//   Map.entry("b", 2)  →  "b"=2
+// ofEntries 把它们合成一个 Map
+Map<String, Integer> big = Map.ofEntries(
+        Map.entry("a", 1),
+        Map.entry("b", 2));
+// big = {a=1, b=2}
 ```
 
 ---
@@ -586,23 +495,33 @@ Set<String> set = ConcurrentHashMap.newKeySet();
 
 ### ArrayDeque
 
-ArrayDeque 是基于循环数组实现的双端队列，**用作栈或普通队列时性能优于 LinkedList**（无节点对象开销，缓存友好）。它不是线程安全的，且不允许 null 元素。
-
-- 当**栈**用：`push` / `pop` / `peek`，替代遗留的 `Stack`；
-- 当**队列**用：`offer` / `poll` / `peek`；
-- 当**双端队列**用：`offerFirst` / `offerLast` / `pollFirst` / `pollLast`。
+ArrayDeque 是基于循环数组实现的双端队列。它不是线程安全的，且不允许 null 元素。
 
 #### 常用 API
 
-| 方法分类 | 头部（先进先出的"队首" / 栈顶）     | 尾部                              |
-| -------- | ----------------------------------- | --------------------------------- |
-| 添加     | `addFirst(E e)` / `offerFirst(E e)` | `addLast(E e)` / `offerLast(E e)` |
-| 移除     | `removeFirst()` / `pollFirst()`     | `removeLast()` / `pollLast()`     |
-| 查看     | `getFirst()` / `peekFirst()`        | `getLast()` / `peekLast()`        |
-| 栈操作   | `push(E e)` / `pop()` / `peek()`    | —                                 |
-| 队列操作 | `poll()` / `peek()`（作用于头部）   | `offer(E e)`（作用于尾部）        |
+**栈操作**（后进先出）
 
-> `add*`/`remove*`/`get*` 失败时抛异常；`offer*`/`poll*`/`peek*` 失败时返回 null 或 false，推荐使用后者。
+| 方法        | 说明                   |
+| ----------- | ---------------------- |
+| `push(E e)` | 压栈（添加到头部）     |
+| `pop()`     | 弹栈（移除并返回头部） |
+| `peek()`    | 查看栈顶（不移除）     |
+
+**队列操作**（先进先出）
+
+| 方法         | 说明                   |
+| ------------ | ---------------------- |
+| `offer(E e)` | 入队（添加到尾部）     |
+| `poll()`     | 出队（移除并返回头部） |
+| `peek()`     | 查看队首（不移除）     |
+
+**双端队列操作**（两端均可操作）
+
+| 方法                                 | 说明                      |
+| ------------------------------------ | ------------------------- |
+| `offerFirst(E e)` / `offerLast(E e)` | 在头部 / 尾部添加         |
+| `pollFirst()` / `pollLast()`         | 移除并返回头部 / 尾部元素 |
+| `peekFirst()` / `peekLast()`         | 查看头部 / 尾部元素       |
 
 ```java
 import java.util.ArrayDeque;
@@ -623,150 +542,69 @@ System.out.println(queue.poll()); // "task-1"
 
 ---
 
-### PriorityQueue
-
-PriorityQueue 是基于二叉堆实现的优先级队列：每次 `poll` 取出的不是最早进入的元素，而是**优先级最高**（最小）的元素。默认按自然顺序排序，也可传入 Comparator 自定义。不是线程安全的，不允许 null 元素。
-
-典型场景：Top-K 问题、任务调度（按优先级执行）、合并 K 个有序序列、Dijkstra 算法。
-
-#### 常用 API
-
-| 方法                      | 说明                                          |
-| ------------------------- | --------------------------------------------- |
-| `offer(E e)` / `add(E e)` | 入队，按优先级自动调整位置                    |
-| `poll()`                  | 移除并返回优先级最高的元素，空时返回 null     |
-| `peek()`                  | 查看优先级最高的元素（不移除），空时返回 null |
-| `size()` / `isEmpty()`    | 元素个数 / 是否为空                           |
-| `clear()`                 | 清空                                          |
-
-> 注意：`iterator()` 遍历**不保证**按优先级顺序输出，要按序取出必须循环 `poll()`。
-
-```java
-import java.util.PriorityQueue;
-
-// 默认小顶堆：数字越小优先级越高
-PriorityQueue<Integer> pq = new PriorityQueue<>();
-pq.offer(5);
-pq.offer(1);
-pq.offer(3);
-System.out.println(pq.poll()); // 1
-System.out.println(pq.poll()); // 3
-
-// 自定义优先级：按任务紧急程度排序
-record Task(String name, int priority) {}
-PriorityQueue<Task> tasks = new PriorityQueue<>(
-        Comparator.comparingInt(Task::priority).reversed());
-tasks.offer(new Task("普通报表", 1));
-tasks.offer(new Task("线上故障", 9));
-System.out.println(tasks.poll().name()); // 线上故障
-```
-
----
-
 ### LinkedBlockingQueue
 
-LinkedBlockingQueue 是一个阻塞队列，遵循先进先出原则，类似于浏览器的事件队列（Event Loop）。提供了可选的容量限制，容量默认是 `Integer.MAX_VALUE`，因此通常可以认为它是"无界"的，但需根据环境提供合理限制，否则容易造成内存泄露。
+LinkedBlockingQueue 是一个**线程安全**的队列。容量默认是 `Integer.MAX_VALUE`，因此通常可以认为它是“无界”的，但需根据环境提供合理限制，否则容易造成内存泄露。
 
-LinkedBlockingQueue 内部使用两个独立的锁来提高并发度：读锁和写锁分离，生产和消费可以一定程度并行。
+内部使用两个独立的锁（读锁和写锁分离）来提高并发度，生产和消费可以一定程度并行。
 
 #### 常用方法
 
-| 方法分类   | 方法                                              | 行为                                        |
-| ---------- | ------------------------------------------------- | ------------------------------------------- |
-| **阻塞**   | `void put(E e)`                                   | 插入元素，队列满时阻塞直到有空位            |
-|            | `E take()`                                        | 取出元素，队列空时阻塞直到有元素            |
-| **非阻塞** | `boolean offer(E e)`                              | 队列未满则插入并返回 true，否则返回 false   |
-|            | `E poll()`                                        | 队列非空则取出并返回头部元素，否则返回 null |
-| **超时**   | `boolean offer(E e, long timeout, TimeUnit unit)` | 在指定时间内等待有空位，超时返回 false      |
-|            | `E poll(long timeout, TimeUnit unit)`             | 在指定时间内等待有元素，超时返回 null       |
-| **辅助**   | `int size()`                                      | 返回当前元素个数（非精确，因为并发）        |
-|            | `int remainingCapacity()`                         | 返回剩余容量                                |
+| 方法                                      | 说明                                   |
+| ----------------------------------------- | -------------------------------------- |
+| `put(E e)`                                | 插入元素，队列满时阻塞直到有空位       |
+| `take()`                                  | 取出元素，队列空时阻塞直到有元素       |
+| `offer(E e)`                              | 插入元素，队列满时返回 false（不阻塞） |
+| `poll()`                                  | 取出元素，队列空时返回 null（不阻塞）  |
+| `offer(E e, long timeout, TimeUnit unit)` | 在指定时间内等待有空位，超时返回 false |
+| `poll(long timeout, TimeUnit unit)`       | 在指定时间内等待有元素，超时返回 null  |
+| `size()`                                  | 返回当前元素个数（并发下非精确）       |
+| `remainingCapacity()`                     | 返回剩余容量                           |
 
 #### 生产者-消费者模型示例
 
 ```java
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
-public class LinkedBlockingQueueDemo {
-    // 创建容量为 3 的阻塞队列
-    private static final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(3);
+LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(3);
 
-    static class Producer implements Runnable {
-        @Override
-        public void run() {
-            try {
-                for (int i = 1; i <= 5; i++) {
-                    String item = "task-" + i;
-                    queue.put(item);  // 队列满则阻塞等待
-                    System.out.println(Thread.currentThread().getName() + " 生产：" + item);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+// 生产者
+new Thread(() -> {
+    try {
+        for (int i = 1; i <= 5; i++) {
+            String item = "task-" + i;
+            queue.put(item);  // 队列满则阻塞等待
+            System.out.println("生产者：" + item);
         }
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
     }
+}).start();
 
-    static class Consumer implements Runnable {
-        @Override
-        public void run() {
-            try {
-                while (true) {
-                    String item = queue.take(); // 队列空则阻塞等待
-                    System.out.println(Thread.currentThread().getName() + " 消费：" + item);
-                    Thread.sleep(500); // 模拟消费耗时
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+// 消费者
+new Thread(() -> {
+    try {
+        while (true) {
+            String item = queue.take(); // 队列空则阻塞等待
+            System.out.println("消费者：" + item);
+            Thread.sleep(500); // 模拟消费耗时
         }
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
     }
-
-    public static void main(String[] args) {
-        new Thread(new Producer(), "生产者").start();
-        new Thread(new Consumer(), "消费者").start();
-    }
-}
+}).start();
 ```
 
 运行结果（部分示例）：
 
 ```
-生产者 生产：task-1
-生产者 生产：task-2
-生产者 生产：task-3  // 队列已满，生产者阻塞
-消费者 消费：task-1
-生产者 生产：task-4  // 消费后队列有空位，生产者继续
-消费者 消费：task-2
+生产者：task-1
+生产者：task-2
+生产者：task-3  // 队列已满，生产者阻塞
+消费者：task-1
+生产者：task-4  // 消费后队列有空位，生产者继续
+消费者：task-2
 ...
-```
-
----
-
-## 不可变集合
-
-不可变集合创建后不能增删改，适合用作常量配置、方法返回值（防止调用方篡改）、缓存 key 等场景。
-
-| 创建方式                                                                          | 说明                                                 |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `List.of(e1, e2, ...)` / `Set.of(...)` / `Map.of(k1, v1, ...)`                    | 直接创建不可变集合，元素不允许 null                  |
-| `List.copyOf(collection)` / `Set.copyOf(...)` / `Map.copyOf(...)`                 | 从已有集合复制出不可变副本                           |
-| `Collectors.toUnmodifiableList()` / `toUnmodifiableSet()` / `toUnmodifiableMap()` | Stream 收集为不可变集合                              |
-| `Collections.unmodifiableList(list)` 等                                           | 只读视图：原集合被修改时视图跟着变，注意不是真不可变 |
-
-```java
-// 直接创建
-List<String> levels = List.of("INFO", "WARN", "ERROR");
-Set<String> roles = Set.of("admin", "user");
-Map<String, Integer> config = Map.of("timeout", 30, "retry", 3);
-// levels.add("DEBUG"); // UnsupportedOperationException
-
-// 从已有集合复制
-List<String> copy = List.copyOf(mutableList);
-
-// Stream 收集
-Map<Long, String> idToName = users.stream()
-        .collect(Collectors.toUnmodifiableMap(User::getId, User::getName));
 ```
 
 ---
@@ -775,124 +613,51 @@ Map<Long, String> idToName = users.stream()
 
 ### Collections 工具类
 
+Collections 是一个**工具类**，提供了一系列静态方法，用于对各种集合进行通用操作。它不是集合本身，而是"集合的瑞士军刀"。
+
+主要功能分类：
+
+| 功能         | 方法示例                                  | 说明                            |
+| ------------ | ----------------------------------------- | ------------------------------- |
+| **集合操作** | `reverse`、`shuffle`、`rotate`、`swap`    | 反转、随机打乱、旋转、交换      |
+| **查找**     | `max`、`min`、`binarySearch`、`frequency` | 最大/最小值、二分查找、出现次数 |
+| **修改**     | `fill`、`copy`、`replaceAll`、`nCopies`   | 填充、复制、替换、生成重复列表  |
+
 ```java
 import java.util.Collections;
 
-List<Integer> list = new ArrayList<>(Arrays.asList(3, 1, 2));
+List<Integer> list = new ArrayList<>(List.of(3, 1, 2));
 
-// 排序
-Collections.sort(list);      // [1, 2, 3]
-Collections.reverse(list);   // [3, 2, 1]
+// 集合操作
+Collections.reverse(list);              // 反转：[2, 1, 3]
+Collections.shuffle(list);              // 随机打乱：顺序随机
 
 // 查找
-int max = Collections.max(list);            // 3
-int min = Collections.min(list);            // 1
+int max = Collections.max(list);        // 最大值：3
+int min = Collections.min(list);        // 最小值：1
+int count = Collections.frequency(list, 2); // 元素 2 出现的次数
 int index = Collections.binarySearch(list, 2); // 二分查找（需先排序）
 
-// 填充/替换
-Collections.fill(list, 0);            // [0, 0, 0]
-Collections.replaceAll(list, 0, 1);   // 替换所有0为1
-
-// 空集合/单元素集合（返回不可变的共享实例，避免 new）
-List<String> empty = Collections.emptyList();
-Map<String, String> emptyMap = Collections.emptyMap();
-List<String> single = Collections.singletonList("A");
-
-// 线程安全包装（所有操作加锁，并发高时优先用 ConcurrentHashMap/CopyOnWriteArrayList）
-List<String> syncList = Collections.synchronizedList(new ArrayList<>());
-Map<String, String> syncMap = Collections.synchronizedMap(new HashMap<>());
-
-// 只读视图
-List<String> readOnly = Collections.unmodifiableList(list);
-// readOnly.add("A"); // UnsupportedOperationException
-```
-
-### Arrays 工具类
-
-```java
-import java.util.Arrays;
-
-// 数组 → List（固定长度，不能 add/remove，只能 set）
-String[] arr = {"A", "B", "C"};
-List<String> list = Arrays.asList(arr);
-
-// 数组 → 可变 List / Stream
-List<String> mutable = new ArrayList<>(Arrays.asList(arr));
-List<String> upper = Arrays.stream(arr)
-        .map(String::toUpperCase)
-        .toList();
-
-// 复制数组
-String[] copy = Arrays.copyOf(arr, 2);           // ["A", "B"]
-String[] copy2 = Arrays.copyOfRange(arr, 1, 3);  // ["B", "C"]
-
-// 排序
-int[] nums = {3, 1, 2};
-Arrays.sort(nums); // [1, 2, 3]
-
-// 二分查找（数组必须有序）
-int index = Arrays.binarySearch(nums, 2); // 1
-
-// 填充
-Arrays.fill(nums, 0); // [0, 0, 0]
-
-// 比较
-int[] arr1 = {1, 2, 3};
-int[] arr2 = {1, 2, 3};
-boolean equal = Arrays.equals(arr1, arr2); // true
-
-// 转字符串
-String str = Arrays.toString(arr1); // "[1, 2, 3]"
-```
-
----
-
-## 集合初始化的多种方式
-
-```java
-// 1. 传统方式（适合大部分场景）
-List<String> list1 = new ArrayList<>();
-list1.add("A");
-list1.add("B");
-
-// 2. 转为可变列表（快速创建可变列表并初始化值）
-List<String> list3 = new ArrayList<>(Arrays.asList("A", "B"));
-list3.add("C"); // ✅ 可以添加
-
-// 3. Arrays.asList（固定长度，不能add/remove，只能set）
-List<String> list2 = Arrays.asList("A", "B", "C");
-// list2.add("D"); // UnsupportedOperationException
-
-// 4. List.of / Set.of / Map.of（不可变）
-List<String> list4 = List.of("A", "B", "C");
-Set<String> set = Set.of("A", "B", "C");
-Map<String, String> map = Map.of("key1", "value1", "key2", "value2");
-// list4.add("D"); // UnsupportedOperationException
-
-// 5. Stream
-List<String> list5 = Stream.of("A", "B", "C")
-        .collect(Collectors.toList());
-// 或直接收集为不可变列表
-List<String> list6 = Stream.of("A", "B", "C").toList();
+// 修改
+Collections.fill(list, 0);              // 全部填充为 0：[0, 0, 0]
+Collections.replaceAll(list, 0, 1);     // 替换所有 0 为 1
 ```
 
 ---
 
 ## 选型速查表
 
-| 需求                      | 推荐集合                        | 备注                     |
-| ------------------------- | ------------------------------- | ------------------------ |
-| 通用的有序列表            | `ArrayList`                     | 默认首选，随机访问快     |
-| 频繁头部插入/删除         | `LinkedList`                    | 其余场景仍优先 ArrayList |
-| 线程安全 List（读多写少） | `CopyOnWriteArrayList`          | 监听器、缓存场景         |
-| 线程安全 List（读写均衡） | `Collections.synchronizedList`  | 所有操作加锁             |
-| 去重、快速判断存在        | `HashSet`                       | 无序                     |
-| 去重且保持插入顺序        | `LinkedHashSet`                 | 遍历顺序 = 插入顺序      |
-| 线程安全 Set              | `ConcurrentHashMap.newKeySet()` | 并发去重首选             |
-| 键值对存取                | `HashMap`                       | 默认首选，无序           |
-| 键值对且保持插入顺序      | `LinkedHashMap`                 | JSON 序列化、LRU 基础    |
-| 线程安全 Map              | `ConcurrentHashMap`             | 不允许 null 键值         |
-| 栈 / 普通队列（单线程）   | `ArrayDeque`                    | 比 LinkedList 更快       |
-| 按优先级取元素            | `PriorityQueue`                 | Top-K、任务调度          |
-| 生产者-消费者（跨线程）   | `LinkedBlockingQueue`           | 记得设置容量上限         |
-| 常量/返回给调用方的集合   | `List.of` / `Map.copyOf` 等     | 不可变，防篡改           |
+| 需求                      | 推荐集合                        | 备注                  |
+| ------------------------- | ------------------------------- | --------------------- |
+| 通用的有序列表            | `ArrayList`                     | 默认首选，随机访问快  |
+| 线程安全 List（读多写少） | `CopyOnWriteArrayList`          | 监听器、缓存场景      |
+| 线程安全 List（读写均衡） | `Collections.synchronizedList`  | 所有操作加锁          |
+| 去重、快速判断存在        | `HashSet`                       | 无序                  |
+| 去重且保持插入顺序        | `LinkedHashSet`                 | 遍历顺序 = 插入顺序   |
+| 线程安全 Set              | `ConcurrentHashMap.newKeySet()` | 并发去重首选          |
+| 键值对存取                | `HashMap`                       | 默认首选，无序        |
+| 键值对且保持插入顺序      | `LinkedHashMap`                 | JSON 序列化、LRU 基础 |
+| 线程安全 Map              | `ConcurrentHashMap`             | 不允许 null 键值      |
+| 栈 / 普通队列（单线程）   | `ArrayDeque`                    | 推荐首选              |
+| 生产者-消费者（跨线程）   | `LinkedBlockingQueue`           | 记得设置容量上限      |
+| 常量/返回给调用方的集合   | `List.of` / `Map.copyOf` 等     | 不可变，防篡改        |
