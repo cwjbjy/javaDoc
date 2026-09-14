@@ -3,6 +3,7 @@
 > 本指南面向需要**读懂和维护使用 fastjson 1.2.83 的既有项目**的开发者，以参考项目 `finchina-data-mcp-server-ex`（`D:\dzh\finchina-data-mcp-server-ex`）的真实用法为主线。
 > 适用版本：`com.alibaba:fastjson:1.2.83`（1.x 系列的最终版本）。
 > 本文与 [jackson-guide.md](jackson-guide.md) 并列；本项目自身的 JSON 处理仍以 Jackson 3.1.2 为准，fastjson 仅用于理解外部参考项目。
+> 示例状态：除特别说明外，代码块均为说明 API 的片段或参考项目摘录，不是可独立运行的完整程序。
 
 ---
 
@@ -33,7 +34,7 @@
 | 中间结构      | `JSONObject`（本质是 `Map`）、`JSONArray`（本质是 `List`） | `JsonNode` 树                                      |
 | 泛型反序列化  | `TypeReference` 匿名子类                                   | `TypeReference`（同理）                            |
 | 字段映射      | `@JSONField(name=...)`                                     | `@JsonProperty`                                    |
-| null 默认行为 | 对象 null 字段默认输出；Map 的 null 值默认**不**输出       | 默认都不输出                                       |
+| null 默认行为 | Bean 属性和 Map entry 的 null 值默认都不输出               | 取决于 `ObjectMapper`/Spring Boot 的包含策略        |
 
 **一句话心智模型：** fastjson 的一切 API 围绕三个类展开——`JSON` 负责转换，`JSONObject`/`JSONArray` 负责以 Map/List 的视角读写 JSON 结构。读懂项目里的 fastjson 用法，就是识别这三者各司其职。
 
@@ -47,15 +48,15 @@
   ┌─────────────────────────┐          ┌─────────────────────────┐
   │  1.2.24 ... 1.2.83      │          │  fastjson2 (2.0.x)      │
   │  · 1.2.83 = 1.x 终点    │  官方推荐 │  · 官方推荐迁移目标     │
-  │  · 2022 年发布后停维护  │ ────────▶ │  · 性能/安全全面重写    │
+  │  · 当前仓库已归档只读   │ ────────▶ │  · 新实现，API/包名有变化 │
   │  · AutoType 默认关闭    │  迁移路径  │  · 包名 com.alibaba.    │
   │  · 仍有已知绕过链研究   │          │    fastjson2（与1.x共存） │
   └─────────────────────────┘          └─────────────────────────┘
 ```
 
-- fastjson 1.x 的 GitHub 仓库已于 2026 年 7 月被官方**归档（read-only）**，1.2.83 就是 1.x 的最终形态。
+- 截至 2026-08-31，fastjson 1.x 的 GitHub 仓库已被官方**归档（read-only）**；仓库说明明确建议升级到 fastjson2。GitHub API 不提供可据此确认的归档日期，因此不在本文断言具体归档月份。
 - **新项目不应再引入 1.2.83**，官方推荐 fastjson2；但大量遗留系统仍锁死在 1.2.83，这正是本指南存在的意义。
-- 官方还提供特殊坐标 `com.alibaba:fastjson:1.2.83_noneautotype`：编译期彻底移除 AutoType 代码，见[第 11 章](#11-安全autotype-与-safemode简要)。
+- 官方还提供特殊版本 `com.alibaba:fastjson:1.2.83_noneautotype`，用于禁用标准 AutoType 加载路径，见[第 11 章](#11-安全autotype-与-safemode简要)。
 
 ---
 
@@ -73,8 +74,8 @@
 
 要点：
 
-- fastjson 1.2.83 是**零依赖**的单 jar（`fastjson-1.2.83.jar`），引入后即可使用，无需任何配置。
-- 它同时支持 JDK 6~17，对老项目非常友好。
+- fastjson 1.2.83 的核心 JSON 功能是单 jar（`fastjson-1.2.83.jar`），没有必须随应用部署的传递依赖；其 POM 中另列有若干 `provided` 集成依赖。
+- 该 jar 已在本文验证环境 JDK 17 上完成行为测试。不要把这一结果外推成完整的 JDK 兼容矩阵；部署到其他 JDK 前仍应运行项目测试。
 - 本指南所有实战代码均来自 `finchina-data-mcp-server-ex`，该项目同时混用 fastjson 与 Jackson（分工见[第 10 章](#10-与-jackson-的边界)）。
 
 ---
@@ -131,7 +132,7 @@ String jsonString = JSON.toJSONString(bean);   // 结果是 String，可直接�
 JSONObject tree    = (JSONObject) JSON.toJSON(bean);  // 结果是树结构，可继续 getXxx 取值
 ```
 
-`JSON.toJSON(obj)` 把 Java 对象**原地转成树**（JSONObject/JSONArray），不经过字符串中转。当你拿到对象后想按 key 取值，用它比"转字符串再 parseObject"更直接。参考项目 `RedisUtils.java` 中就有 `JSONArray.toJSON(t)` 的用法（列表 → JSONArray 树）。
+`JSON.toJSON(obj)` 返回该对象的 JSON 树表示：普通 Bean、Map 和集合通常会构建新的 `JSONObject`/`JSONArray`，**不会修改原对象**；若传入值本来就是 `JSONObject`/`JSONArray`，源码会直接返回原值。对某些自定义序列化器，内部仍可能退回到“序列化字符串再解析”的路径，因此也不应笼统声称它永远不经过字符串中转。参考项目 `RedisUtils.java` 中有 `JSONArray.toJSON(t)` 的用法（列表 → JSONArray 树）。
 
 ### 3.4 列表反序列化：parseArray
 
@@ -194,7 +195,7 @@ JSONObject stockBondInfoJson = JSONObject.parseObject(stockBondInfoStr);
 
 **坑 1：内部默认无序。** `JSONObject` 默认用 `HashMap` 存数据，`toString()` 输出的字段顺序不保证与 JSON 原文一致。需要保序时，在解析时指定 `Feature.OrderedField`，见[第 8.1 节](#81-featureorderedfield保持字段顺序)。
 
-**坑 2：Map 的 null 值默认不输出。** 对 `JSONObject` 做 `toJSONString` 时，值为 null 的 entry 会被丢弃；需要保留时加 `SerializerFeature.WriteMapNullValue`，见[第 8.2 节](#82-serializerfeaturewritemapnullvalue保留-null-值)。
+**坑 2：null 值默认不输出。** 无论普通 Bean 属性还是 `Map`/`JSONObject` entry，值为 null 时默认都会从序列化结果中省略；需要保留时加 `SerializerFeature.WriteMapNullValue`，见[第 8.2 节](#82-serializerfeaturewritemapnullvalue保留-null-值)。
 
 ---
 
@@ -336,14 +337,14 @@ JSONObject dataClone = JSONObject.parseObject(
         JSONObject.toJSONString(config.getOrgJson(), SerializerFeature.WriteMapNullValue));
 ```
 
-fastjson 有一个容易踩的**不对称默认**：
+fastjson 1.2.83 的默认行为是：
 
 ```
-序列化普通 Java 对象  →  null 字段默认输出
-序列化 Map/JSONObject →  值为 null 的 entry 默认不输出（丢弃！）
+序列化普通 Java 对象  →  null 属性默认不输出
+序列化 Map/JSONObject →  值为 null 的 entry 默认不输出
 ```
 
-上面代码的意图是"序列化往返做一次克隆"，如果不加 `WriteMapNullValue`，JSONObject 里值为 null 的 key 会在 `toJSONString` 时消失，往返后结构就变了。凡是**先转字符串再解析回来**的场景，都要检查是否需要这个开关。
+上面代码的意图是"序列化往返做一次克隆"，如果不加 `WriteMapNullValue`，JSONObject 里值为 null 的 key 会在 `toJSONString` 时消失，往返后结构就变了。普通 Bean 的 null 属性也遵循相同默认。凡是**先转字符串再解析回来**的场景，都要检查是否需要这个开关。
 
 ### 8.3 其他常用 SerializerFeature 速查
 
@@ -353,7 +354,7 @@ fastjson 有一个容易踩的**不对称默认**：
 | `WriteNullStringAsEmpty`         | null 字符串输出为 `""`                                |
 | `PrettyFormat`                   | 美化输出（带缩进换行，便于日志阅读）                  |
 | `WriteDateUseDateFormat`         | 日期按全局 `JSON.DEFFAULT_DATE_FORMAT` 输出           |
-| `DisableCircularReferenceDetect` | 关闭循环引用检测（默认开启，检测到循环会输出 `$ref`） |
+| `DisableCircularReferenceDetect` | 关闭引用检测（默认开启；重复或循环引用可能输出 `$ref`） |
 
 ---
 
@@ -374,17 +375,17 @@ public static <T> T clone(T obj) {
 }
 ```
 
-原理：`toJSONString` 把对象连同嵌套引用**全部展开**成字符串 → `parseObject` 按原类型重建一个全新对象。天然深拷贝，不必逐字段 copy。
+原理：`toJSONString` 先把**能表示为 JSON 的状态**写成字符串，`parseObject` 再按运行时类型重建对象。它常被当作便捷的“深拷贝”，但不是任意 Java 对象图的通用克隆：类型信息、引用关系、不可序列化状态和 null 字段都可能变化。
 
 ### 9.2 代价与边界
 
 | 问题           | 说明                                                                               |
 | -------------- | ---------------------------------------------------------------------------------- |
-| 性能           | 字符串序列化 + 反射重建，比手写 copy 慢一个数量级；大对象批量 clone 不划算         |
-| 精度           | `BigDecimal` 默认按字符串输出、无损；但需确认项目没改全局日期/数字格式             |
-| 构造器         | 目标类型必须有**无参构造**（fastjson 反射实例化）                                  |
+| 性能           | 需要字符串序列化和反射重建；大对象或批量 clone 前应基准测试                       |
+| 精度           | `BigDecimal` 默认输出为 JSON 数字；按原字段类型反序列化通常可保留 scale，但跨类型转换仍需测试 |
+| 构造器         | 普通 JavaBean 路径通常需要无参构造；显式 creator 等特殊反序列化路径另当别论        |
 | 字段匹配       | 依赖字段名精确匹配（有 `@JSONField(name=...)` 时按映射名走），无匹配字段会静默丢弃 |
-| 不可序列化成员 | `transient`、`static` 字段不参与，内部类/代理类可能失败                            |
+| 不可序列化成员 | `static` 不属于实例状态；`transient`、内部类、代理类和自定义访问器的行为需单独验证 |
 
 ### 9.3 何时用
 
@@ -433,25 +434,33 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 
 ### 11.1 一句话背景
 
-fastjson 曾因 **AutoType** 机制（反序列化时按 JSON 里的 `@type` 字段任意加载类）被曝光多轮 RCE 漏洞链。安全演进路线：
+fastjson 曾因 **AutoType** 机制（反序列化时根据 JSON 里的 `@type` 选择具体类）被曝光多轮反序列化漏洞链。安全演进可简化为：
 
 ```
 1.2.24 及以前      1.2.25 起          1.2.68 起           1.2.83
-  autotype         黑名单 + 默认受限   safeMode 开关        1.x 终点：
-  全开放    ──▶    （白名单三选一） ──▶ （完全禁用）   ──▶   AutoType 默认关闭
+  AutoType 风险高    AutoType 默认关闭   增加 safeMode        1.x 最终版本：
+              ──▶                    ──▶ 可拒绝 AutoType ──▶   仍应显式加固
 ```
 
-官方 wiki 明确：1.2.83 中 AutoType **默认关闭**，且提供了彻底移除 AutoType 代码的特供坐标 `com.alibaba:fastjson:1.2.83_noneautotype`。
+1.2.83 中 AutoType 默认关闭，并提供不支持 AutoType 的特殊版本 `com.alibaba:fastjson:1.2.83_noneautotype`。但“默认关闭”不等于适合直接解析不可信输入；维护遗留系统时仍应启用 safeMode 或使用 noneautotype 版本，并限制输入大小和可到达的反序列化类型。
 
 ### 11.2 怎么判断代码是否触发 AutoType
 
-看序列化侧是否用了 `SerializerFeature.WriteClassName`：
+审计时至少搜索以下入口：
+
+- `Feature.SupportAutoType`
+- `ParserConfig.setAutoTypeSupport(true)`
+- `ParserConfig.addAccept(...)`
+- `SerializerFeature.WriteClassName`
+- JVM 参数或 `fastjson.properties` 中的 AutoType 配置
+
+`WriteClassName` 会在己方序列化结果中写出 `@type`：
 
 ```java
 JSON.toJSONString(obj, SerializerFeature.WriteClassName); // 会产生 {"@type":"com.xxx.MyBean",...}
 ```
 
-`@type` 就是 AutoType 的触发信号。**参考项目里没有 `WriteClassName` 用法**，所有 `parseObject` 都指定了明确的目标类型（`clazz` 或 `TypeReference`），不依赖 AutoType，风险面很低。
+但不能只搜索 `WriteClassName`：攻击者可以直接在外部 JSON 中放入 `@type`，解析侧是否接受它才是安全边界。本文审阅时未在参考项目中发现上述显式开启 AutoType 的代码或配置；项目同时存在无目标类型的 `parseObject(String)` 调用，因此仍应按“不可信输入可能到达解析器”进行威胁建模，不能仅据此宣称风险很低。
 
 ### 11.3 维护 1.2.83 项目的三个动作
 
@@ -471,7 +480,7 @@ fastjson.parser.safeMode=true                          // 类路径 fastjson.pro
 
 safeMode 开启后**完全禁用 AutoType**，白名单也不生效——这是最硬的开关。
 
-2. **如业务必须用 AutoType**，用白名单而非全开：`ParserConfig.getGlobalInstance().addAccept("com.yourcompany.")` 只放行自己包（三选一：代码 / JVM 参数 / `fastjson.properties`）。
+2. **如遗留协议确实依赖 AutoType**，优先改成显式 DTO 类型；暂时无法改造时才使用最小包前缀白名单，例如 `ParserConfig.getGlobalInstance().addAccept("com.yourcompany.dto.")`，不要全局开启。白名单前缀必须足够窄，并配合针对恶意 `@type` 的回归测试。
 
 3. **长期规划迁移 fastjson2**（包名 `com.alibaba.fastjson2`，与 1.x 可共存，官方提供兼容模式），1.x 已停止维护。
 
@@ -515,5 +524,7 @@ JSONArray（本质 List<Object>）
 
 ## 参考资料
 
-- [alibaba/fastjson GitHub Wiki（官方）](https://github.com/alibaba/fastjson/wiki)：AutoType 配置（enable_autotype）、safeMode 配置（fastjson_safemode）；本指南第 11 章的配置方式与版本事实均出自此处。
+- [alibaba/fastjson 1.2.83 源码（官方）](https://github.com/alibaba/fastjson/tree/1.2.83)：用于核对 `JSON.toJSON`、`JSONObject`、默认特性和 `ParserConfig` 行为。
+- [alibaba/fastjson GitHub Wiki（官方）](https://github.com/alibaba/fastjson/wiki)：AutoType 配置（enable_autotype）与 safeMode 配置（fastjson_safemode）。
+- [alibaba/fastjson 仓库（官方）](https://github.com/alibaba/fastjson)：截至 2026-08-31 为 archived，仓库说明建议升级 fastjson2。
 - 参考项目源码：`D:\dzh\finchina-data-mcp-server-ex`（本指南所有"实战"片段来源，个别片段有删节）。
