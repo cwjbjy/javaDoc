@@ -14,17 +14,19 @@
    - [2.1 依赖与配置](#21-依赖与配置)
    - [2.2 实体注解：告诉 MP 表与类的映射关系](#22-实体注解告诉-mp-表与类的映射关系)
    - [2.3 BaseMapper：继承即拥有 CRUD](#23-basemapper继承即拥有-crud)
-3. [条件构造器：用 Java 代码组装 WHERE 子句](#3-条件构造器用-java-代码组装-where-子句)
-   - [3.1 QueryWrapper：链式 API](#31-querywrapper链式-api)
-   - [3.2 LambdaQueryWrapper：类型安全的推荐写法](#32-lambdaquerywrapper类型安全的推荐写法)
-   - [3.3 LambdaUpdateWrapper：动态 UPDATE](#33-lambdaupdatewrapper动态-update)
-   - [3.4 常用条件方法速查](#34-常用条件方法速查)
-4. [分页插件：告别手写 LIMIT](#4-分页插件告别手写-limit)
-5. [常用功能](#5-常用功能)
-   - [5.1 逻辑删除：@TableLogic](#51-逻辑删除tablelogic)
-   - [5.2 自动填充：MetaObjectHandler](#52-自动填充metaobjecthandler)
-   - [5.3 主键策略：IdType](#53-主键策略idtype)
-6. [Service 层封装：IService 与 ServiceImpl](#6-service-层封装iservice-与-serviceimpl)
+3. [Service 层封装：IService 与 ServiceImpl](#3-service-层封装iservice-与-serviceimpl)
+   - [3.1 链式查询：lambdaQuery()](#31-链式查询lambdaquery)
+   - [3.2 链式更新：lambdaUpdate()](#32-链式更新lambdaupdate)
+   - [3.3 IService 提供的通用方法](#33-iservice-提供的通用方法)
+4. [条件构造器：手动使用 Wrapper](#4-条件构造器手动使用-wrapper)
+   - [4.1 LambdaQueryWrapper](#41-lambdaquerywrapper)
+   - [4.2 LambdaUpdateWrapper 与 update() 方法](#42-lambdaupdatewrapper-与-update-方法)
+   - [4.3 常用条件方法速查](#43-常用条件方法速查)
+5. [分页插件：告别手写 LIMIT](#5-分页插件告别手写-limit)
+6. [常用功能](#6-常用功能)
+   - [6.1 逻辑删除：@TableLogic](#61-逻辑删除tablelogic)
+   - [6.2 自动填充：MetaObjectHandler](#62-自动填充metaobjecthandler)
+   - [6.3 主键策略：IdType](#63-主键策略idtype)
 7. [与原生 MyBatis 混用](#7-与原生-mybatis-混用)
 8. [代码生成器](#8-代码生成器)
    - [8.1 依赖](#81-依赖)
@@ -161,7 +163,7 @@ mybatis-plus:
 
 MyBatis 用 XML `<resultMap>` 定义列与属性的映射。MyBatis-Plus 用注解直接标注在实体类上：
 
-> **Illustrative fragment** —— 展示实体注解的用法，省略了 getter/setter（实际项目用 Lombok `@Data`）。
+> **Illustrative fragment** —— 展示实体注解的用法。
 
 ```java
 package com.example.javadoc.module.user.entity;
@@ -169,9 +171,11 @@ package com.example.javadoc.module.user.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 import java.time.LocalDateTime;
 
-@TableName("user")   // 对应数据库表名
+@Data                        // Lombok：自动生成 getter / setter / toString 等
+@TableName("user")           // 对应数据库表名
 public class User {
 
     @TableId(type = IdType.AUTO)  // 主键，自增
@@ -266,6 +270,7 @@ import com.example.javadoc.module.user.entity.User;
 // 只需继承 BaseMapper<User>，无需任何 XML 或注解 SQL
 public interface UserMapper extends BaseMapper<User> {
     // 空接口——已经拥有全部 CRUD 方法
+    // 一般与 IService 和 ServiceImpl 结合使用
 }
 ```
 
@@ -276,268 +281,223 @@ public interface UserMapper extends BaseMapper<User> {
 public class JavaDocApplication { ... }
 ```
 
-`BaseMapper<T>` 提供的方法一览：
+---
+
+## 3. Service 层封装：IService 与 ServiceImpl
+
+`BaseMapper` 解决了 Mapper 层的 CRUD。实际项目中，Service 层同样采用**接口 + 实现类**的配对模式——`IService<T>` 与 `ServiceImpl<M, T>`：
 
 ```
-BaseMapper<User> 提供的方法
-═══════════════════════════════════════════════════════════════════
-
-插入
-  int insert(User entity)                     插入一条记录
-
-删除
-  int deleteById(Long id)                     根据 ID 删除
-  int deleteByMap(Map<String, Object> map)    根据列映射删除
-  int delete(Wrapper<User> wrapper)           根据条件删除
-  int deleteBatchIds(Collection<Long> ids)    批量 ID 删除
-
-更新
-  int updateById(User entity)                 根据 ID 更新（忽略 null 字段）
-  int update(User entity, Wrapper<User> w)    根据条件更新
-
-查询
-  User selectById(Long id)                    根据 ID 查询
-  List<User> selectBatchIds(Collection<Long>) 批量 ID 查询
-  List<User> selectByMap(Map<String, Object>) 根据列映射查询
-  User selectOne(Wrapper<User> wrapper)       条件查询单条
-  List<User> selectList(Wrapper<User> w)      条件查询列表
-  Long selectCount(Wrapper<User> wrapper)     条件查询总数
-  List<Object> selectObjs(Wrapper<User> w)    查询第一列
-  <E> IPage<E> selectPage(IPage<E> page,      分页查询
-                    Wrapper<User> wrapper)
-  <E> List<Map<String, Object>> selectMaps    返回 Map 列表
+IService<User>             ←→  ServiceImpl<UserMapper, User>
+（接口：声明"能做什么"）         （实现：提供"怎么做"）
+      │                                │
+      │ extends                        │ extends + implements
+      ▼                                ▼
+UserService                      UserServiceImpl
 ```
 
-在 Service 中使用：
+它们**必须成对出现**：`IService` 定义接口契约，`ServiceImpl` 提供全部通用 CRUD 实现。继承后，单表操作中"根据 ID 查/删/改"、"列表查询"、"批量操作"、"分页"等通用方法**你都不用再自己写了**：
 
 ```java
+// 接口：继承 IService
+public interface UserService extends IService<User> {
+    // 自定义业务方法（通用 CRUD 不用声明，已继承）
+    List<User> getActiveUsers();
+}
+
+// 实现类：继承 ServiceImpl，实现自己的接口
 @Service
-public class UserService {
+public class UserServiceImpl extends ServiceImpl<UserMapper, User>
+        implements UserService {
 
-    private final UserMapper userMapper;
+    // ---- 以下方法来自 IService，不用自己写 ----
+    // getById(id), save(entity), saveBatch(list),
+    // updateById(entity), removeById(id), page(page, wrapper) ...
 
-    public UserService(UserMapper userMapper) {
-        this.userMapper = userMapper;
+    // ---- 自定义业务方法 ----
+}
+```
+
+内置方法直接在 Service 中调用，不需要通过 Mapper：
+
+**内置方法的使用**——`IService` 提供的方法可以直接使用，不需要自己实现：
+
+```java
+// 在 Controller 中：通过注入的 userService 调用
+@RestController
+public class UserController {
+    @Autowired
+    private UserService userService;
+
+    public List<User> allUsers() {
+        return userService.list();     // 查询全部（内部调用 mapper.selectList(null)）
     }
 
-    // 根据 ID 查询——一行搞定，不需要 XML
-    public User getById(Long id) {
-        return userMapper.selectById(id);
+    public void addUser(User user) {
+        userService.save(user);        // 插入（内部调用 mapper.insert()）
     }
 
-    // 查询全部用户
-    public List<User> listAll() {
-        return userMapper.selectList(null);  // null 表示无条件
-    }
-
-    // 新增用户——自动处理主键回填
-    public boolean save(User user) {
-        return userMapper.insert(user) > 0;
-    }
-
-    // 根据 ID 更新——null 字段不会被更新
-    public boolean updateById(User user) {
-        return userMapper.updateById(user) > 0;
-    }
-
-    // 根据 ID 删除
-    public boolean removeById(Long id) {
-        return userMapper.deleteById(id) > 0;
+    public void deleteUser(Long id) {
+        userService.removeById(id);    // 删除（内部调用 mapper.deleteById()）
     }
 }
 ```
 
-对比 MyBatis 方式：
+`IService` 的方法本质上是 `BaseMapper` 方法的 Service 层封装，调用链路如下：
 
 ```
-操作              MyBatis                              MyBatis-Plus
-════════════════════════════════════════════════════════════════════
-根据 ID 查询      写 <select> + resultMap               selectById(id)
-插入              写 <insert> + useGeneratedKeys        insert(entity)
-更新              写 <update> + <set> + <if>            updateById(entity)
-删除              写 <delete>                           deleteById(id)
-查询全部          写 <select>                           selectList(null)
+Controller / ServiceImpl
+        │
+        │  调用 IService 方法
+        ▼
+   userService.list()
+        │
+        │  内部实现
+        ▼
+   mapper.selectList(null)
+        │
+        │  MyBatis 执行
+        ▼
+     SQL: SELECT * FROM user
 ```
 
-> **发生了什么？** `BaseMapper<T>` 在运行时由 MyBatis-Plus 自动注入 SQL 实现。它根据 `@TableName`、`@TableId`、`@TableField` 注解和实体属性，自动生成对应的 SQL。你不需要写 XML，也不需要写注解 SQL。
+使用 `IService` 后，你只需要记住 IService 的方法，不需要记 BaseMapper 的方法名：
 
----
-
-## 3. 条件构造器：用 Java 代码组装 WHERE 子句
-
-`BaseMapper` 的 `selectList(null)` 只能查全部。实际开发中最常见的需求是**动态条件查询**——按姓名模糊搜索、按年龄范围筛选、按创建时间排序。
-
-在 MyBatis 中，你需要写 XML 动态 SQL：
-
-```xml
-<!-- MyBatis 方式：每个查询条件组合都要写一遍 -->
-<select id="selectByCondition" resultMap="BaseResultMap">
-    SELECT * FROM user
-    <where>
-        <if test="userName != null and userName != ''">
-            AND user_name LIKE CONCAT('%', #{userName}, '%')
-        </if>
-        <if test="age != null">
-            AND age = #{age}
-        </if>
-    </where>
-    ORDER BY create_time DESC
-</select>
+```
+你想做什么              IService 方法               不用记 BaseMapper 方法
+════════════════════════════════════════════════════════════════════════════
+插入                  save(entity)               ~~mapper.insert(entity)~~
+根据 ID 查            getById(id)                ~~mapper.selectById(id)~~
+查询全部              list()                     ~~mapper.selectList(null)~~
+条件查询              list(wrapper)              ~~mapper.selectList(wrapper)~~
+更新                  updateById(entity)         ~~mapper.updateById(entity)~~
+删除                  removeById(id)             ~~mapper.deleteById(id)~~
 ```
 
-MyBatis-Plus 用 **Wrapper 条件构造器** 替代了这种 XML 动态 SQL——用 Java 代码链式组装条件：
+只有在**不使用 ServiceImpl**（见 [第 4 节](#4-条件构造器手动使用-wrapper)）时，才需要直接调用 Mapper 方法。
 
-### 3.1 QueryWrapper：链式 API
+### 3.1 链式查询：lambdaQuery()
 
-> **Illustrative fragment** —— 展示 QueryWrapper 的基本用法。
+`lambdaQuery()` 是 `IService` 提供的方法，继承 `ServiceImpl` 后直接可用，无需额外 import。完整示例：
 
 ```java
-// 查询：年龄 > 20 且姓名包含"张"，按创建时间倒序
-QueryWrapper<User> wrapper = new QueryWrapper<>();
-wrapper.gt("age", 20)                        // age > 20
-       .like("user_name", "张")               // user_name LIKE '%张%'
-       .orderByDesc("create_time");           // ORDER BY create_time DESC
+package com.example.javadoc.module.user.service.impl;
 
-List<User> users = userMapper.selectList(wrapper);
-// 生成 SQL：SELECT * FROM user WHERE age > ? AND user_name LIKE ? ORDER BY create_time DESC
+import com.example.javadoc.module.user.entity.User;
+import com.example.javadoc.module.user.service.UserService;
+import org.springframework.stereotype.Service;
+import java.util.List;
+
+@Service
+public class UserServiceImpl extends ServiceImpl<UserMapper, User>
+        implements UserService {
+
+    @Override
+    public List<User> getActiveUsers() {
+        // lambdaQuery() 来自 IService，直接调用
+        return lambdaQuery()
+                .gt(User::getAge, 18)
+                .eq(User::getStatus, 1)
+                .orderByDesc(User::getCreateTime)
+                .list();
+    }
+}
 ```
 
-`QueryWrapper` 的方法名直接对应 SQL 操作符，参数是**数据库列名**（字符串）。
-
-### 3.2 LambdaQueryWrapper：类型安全的推荐写法
-
-`QueryWrapper` 用字符串指定列名——如果写错列名（如 `"userNme"`），编译时不会报错，运行时才抛出 SQL 异常。
-
-MyBatis-Plus 提供了 **Lambda 方式**，用方法引用替代字符串列名：
-
-> **Illustrative fragment** —— 展示 LambdaQueryWrapper 的类型安全优势。
-
-```java
-// LambdaQueryWrapper：用方法引用代替列名字符串
-LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-wrapper.gt(User::getAge, 20)                // ✅ 编译时检查，写错方法名直接报错
-       .like(User::getUserName, "张")        // ✅ IDE 可以跳转、重构安全
-       .orderByDesc(User::getCreateTime);
-
-List<User> users = userMapper.selectList(wrapper);
-```
-
-对比两种写法：
-
-```
-QueryWrapper                        LambdaQueryWrapper
-═══════════════════════            ═══════════════════════════
-.like("user_name", "张")           .like(User::getUserName, "张")
-  ❌ 列名写错，运行时才报错          ✅ 编译时检查
-  ❌ 重构实体属性时容易遗漏          ✅ IDE 自动重构
-  ✅ 写法简单                       ✅ 推荐用于生产代码
-```
-
-> **实践建议**：始终优先使用 `LambdaQueryWrapper`。`QueryWrapper` 适合列名来自变量（如前端传入的排序字段）的少数场景。
-
-**条件组装示例——多条件动态查询：**
+**多条件动态查询**——`condition` 参数为 `false` 时该条件不生效，替代了 MyBatis 的 `<if>` 标签：
 
 ```java
 public List<User> search(String userName, Integer minAge, Integer maxAge) {
-    LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-
-    // 姓名非空时才加 LIKE 条件
-    wrapper.like(userName != null && !userName.isBlank(),
-                 User::getUserName, userName);
-
-    // 年龄范围
-    wrapper.ge(minAge != null, User::getAge, minAge);
-    wrapper.le(maxAge != null, User::getAge, maxAge);
-
-    // 默认按创建时间倒序
-    wrapper.orderByDesc(User::getCreateTime);
-
-    return userMapper.selectList(wrapper);
+    return lambdaQuery()
+            .like(userName != null && !userName.isBlank(),
+                  User::getUserName, userName)
+            .ge(minAge != null, User::getAge, minAge)
+            .le(maxAge != null, User::getAge, maxAge)
+            .orderByDesc(User::getCreateTime)
+            .list();
 }
 ```
 
-注意第一个参数 `condition`（布尔值）——当它为 `false` 时，该条件不会被拼接到 SQL 中。这是 MyBatis-Plus 实现动态条件的核心机制，替代了 MyBatis 的 `<if>` 标签。
-
-**其他常用查询操作：**
-
-```java
-// 精确匹配
-wrapper.eq(User::getStatus, 1);                // status = 1
-wrapper.ne(User::getStatus, 0);                // status != 0
-
-// 范围查询
-wrapper.between(User::getAge, 18, 30);         // age BETWEEN 18 AND 30
-wrapper.in(User::getStatus, List.of(1, 2, 3)); // status IN (1, 2, 3)
-
-// 模糊查询
-wrapper.like(User::getUserName, "张");          // LIKE '%张%'
-wrapper.likeLeft(User::getUserName, "张");      // LIKE '%张'
-wrapper.likeRight(User::getUserName, "张");     // LIKE '张%'
-
-// 空值判断
-wrapper.isNull(User::getEmail);                // email IS NULL
-wrapper.isNotNull(User::getEmail);             // email IS NOT NULL
-
-// 分组与排序
-wrapper.groupBy(User::getAge);                 // GROUP BY age
-wrapper.orderByAsc(User::getAge);              // ORDER BY age ASC
-wrapper.orderByDesc(User::getCreateTime);      // ORDER BY create_time DESC
-
-// 只查询指定列
-wrapper.select(User::getId, User::getUserName); // SELECT id, user_name
-```
-
-### 3.3 LambdaUpdateWrapper：动态 UPDATE
-
-除了查询，MyBatis-Plus 也提供了条件更新：
-
-> **Illustrative fragment** —— 展示 LambdaUpdateWrapper 的用法。
-
-```java
-// 将年龄 > 30 且状态为活跃的用户，状态改为不活跃
-LambdaUpdateWrapper<User> wrapper = new LambdaUpdateWrapper<>();
-wrapper.gt(User::getAge, 30)
-       .eq(User::getStatus, 1)
-       .set(User::getStatus, 0);              // SET status = 0
-
-userMapper.update(null, wrapper);
-// 生成 SQL：UPDATE user SET status = ? WHERE age > ? AND status = ?
-```
-
-> 第一个参数传 `null` 表示不通过实体对象更新，完全由 Wrapper 的 `.set()` 控制 SET 子句。如果传了实体对象，`updateById` 会用实体非 null 字段 + Wrapper 条件组合更新。
-
-### 3.4 常用条件方法速查
+**常用条件方法**——`lambdaQuery()` 和 `lambdaUpdate()` 都支持以下方法：
 
 ```
 方法                  SQL 等价                    示例
 ════════════════════════════════════════════════════════════════
 eq(column, val)       = ?                         eq(User::getAge, 25)
 ne(column, val)       != ?                        ne(User::getStatus, 0)
-gt(column, val)       > ?                         gt(User::getAge, 18)
-ge(column, val)       >= ?                        ge(User::getAge, 18)
-lt(column, val)       < ?                         lt(User::getAge, 60)
-le(column, val)       <= ?                        le(User::getAge, 60)
-between(col, v1, v2)  BETWEEN ? AND ?             between(User::getAge, 18, 60)
-notBetween(col,v1,v2) NOT BETWEEN ? AND ?         notBetween(...)
-like(column, val)     LIKE '%val%'                like(User::getName, "张")
-likeLeft(column, val) LIKE '%val'                 likeLeft(...)
-likeRight(column,val) LIKE 'val%'                 likeRight(...)
-notLike(column, val)  NOT LIKE '%val%'            notLike(...)
-in(column, collection) IN (?, ?, ...)             in(User::getStatus, List.of(1,2))
-notIn(column, coll)   NOT IN (?, ?, ...)          notIn(...)
-isNull(column)        IS NULL                     isNull(User::getEmail)
-isNotNull(column)     IS NOT NULL                 isNotNull(...)
-orderByAsc(column)    ORDER BY col ASC            orderByAsc(User::getAge)
-orderByDesc(column)   ORDER BY col DESC           orderByDesc(User::getCreateTime)
-groupBy(column)       GROUP BY col                groupBy(User::getStatus)
-select(columns...)    SELECT col1, col2           select(User::getId, User::getName)
+gt / ge / lt / le     > / >= / < / <=             gt(User::getAge, 18)
+between               BETWEEN ? AND ?             between(User::getAge, 18, 60)
+like                  LIKE '%val%'                like(User::getName, "张")
+likeLeft / likeRight  LIKE '%val' / 'val%'        likeRight(...)
+in                    IN (?, ?, ...)              in(User::getStatus, List.of(1,2))
+isNull / isNotNull    IS NULL / IS NOT NULL       isNull(User::getEmail)
+orderByAsc / Desc     ORDER BY col ASC/DESC       orderByDesc(User::getCreateTime)
+groupBy               GROUP BY col                groupBy(User::getStatus)
+select                SELECT col1, col2           select(User::getId, User::getName)
 ```
 
-> 所有方法都有带 `boolean condition` 参数的重载版本——`condition` 为 `false` 时该条件不生效，这是实现动态查询的关键。
+> 所有方法都有带 `boolean condition` 参数的重载版本——`condition` 为 `false` 时该条件不生效，这是实现动态查询的关键（见上方 `search()` 示例）。
+
+### 3.2 链式更新：lambdaUpdate()
+
+同样在 `UserServiceImpl` 内部使用，条件、赋值、执行全在一条链上完成：
+
+```java
+public void deactivateInactiveUsers() {
+    // 将年龄 > 30 且状态为活跃的用户，状态改为不活跃
+    lambdaUpdate()
+            .gt(User::getAge, 30)
+            .eq(User::getStatus, 1)
+            .set(User::getStatus, 0)
+            .update();
+    // 生成 SQL：UPDATE user SET status = 0 WHERE age > 30 AND status = 1
+}
+```
+
+### 3.3 IService 提供的通用方法
+
+以下方法全部由 `IService` 内置实现，继承后**直接使用，不需要自己写**：
+
+```
+IService 内置方法（继承即用，不用自己写）
+═══════════════════════════════════════════════════════════════════
+
+单条操作
+  getById(id)              根据 ID 查询
+  getOne(wrapper)          根据条件查询一条
+  save(entity)             插入
+  saveOrUpdate(entity)     插入或更新
+  updateById(entity)       根据 ID 更新
+  removeById(id)           根据 ID 删除
+
+列表操作
+  list()                   查询全部
+  list(wrapper)            条件查询
+  listByIds(ids)           多个 ID 查询
+
+批量操作
+  saveBatch(list)          批量插入
+  saveOrUpdateBatch(list)  批量插入或更新
+  updateBatchById(list)    批量更新
+  removeBatchByIds(ids)    批量删除
+
+链式调用
+  lambdaQuery()            Lambda 链式查询（见 3.1）
+  lambdaUpdate()           Lambda 链式更新（见 3.2）
+
+统计 & 分页
+  count()                  总记录数
+  count(wrapper)           条件计数
+  page(page, wrapper)      分页查询
+```
+
+> 以上覆盖了单表 CRUD 的全部通用场景。你只需要在 Service 中编写**真正的业务逻辑**——关联查询、统计报表、事务编排等。
+>
+> `lambdaQuery()` / `lambdaUpdate()` 底层依赖 `LambdaQueryWrapper` / `LambdaUpdateWrapper` 构建条件（见 [第 4 节](#4-条件构造器手动使用-wrapper)）。
 
 ---
 
-## 4. 分页插件：告别手写 LIMIT
+## 5. 分页插件：告别手写 LIMIT
 
 MyBatis 方式实现分页需要两步：写一个 `COUNT(*)` 查总数，再写一个 `LIMIT offset, size` 查数据。MyBatis-Plus 提供了**分页插件**，自动完成这两步。
 
@@ -575,19 +535,15 @@ public class MyBatisPlusConfig {
 ### 使用分页
 
 ```java
-// Service 中调用
+// Service 中调用（需要 IService，见第 3 节）
 public IPage<User> pageQuery(int pageNum, int pageSize, String userName) {
-    // 构造分页对象（页码从 1 开始）
-    Page<User> page = new Page<>(pageNum, pageSize);
-
-    // 构造查询条件
     LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
     wrapper.like(userName != null && !userName.isBlank(),
                  User::getUserName, userName);
     wrapper.orderByDesc(User::getCreateTime);
 
-    // selectPage 自动执行 COUNT + LIMIT
-    return userMapper.selectPage(page, wrapper);
+    // page() 自动执行 COUNT + LIMIT
+    return this.page(new Page<>(pageNum, pageSize), wrapper);
 }
 ```
 
@@ -635,9 +591,9 @@ public IPage<User> page(@RequestParam(defaultValue = "1") int pageNum,
 
 ---
 
-## 5. 常用功能
+## 6. 常用功能
 
-### 5.1 逻辑删除：@TableLogic
+### 6.1 逻辑删除：@TableLogic
 
 实际项目中很少真正 `DELETE` 数据——更多是用一个 `deleted` 字段标记"已删除"。MyBatis 方式需要手动在每个查询加 `WHERE deleted = 0`，在每个删除操作改为 `UPDATE SET deleted = 1`。
 
@@ -676,7 +632,7 @@ selectList(null)  SELECT * FROM user WHERE deleted = 0
 
 > 逻辑删除是**全局配置**——在 `application.yml` 中设置了 `logic-delete-field` 后，所有实体的 `deleteById`、`selectList` 等方法都会自动应用逻辑删除，无需逐个标注 `@TableLogic`。但如果只想对特定字段生效，可以在实体上显式标注。
 
-### 5.2 自动填充：MetaObjectHandler
+### 6.2 自动填充：MetaObjectHandler
 
 很多表都有 `create_time`、`update_time`、`create_by`、`update_by` 这类审计字段——每次插入/更新都要手动赋值。MyBatis-Plus 提供了自动填充机制：
 
@@ -699,7 +655,7 @@ public class User {
 ```
 
 ```java
-// 第二步：实现 MetaObjectHandler 接口
+// 第二步：实现 MetaObjectHandler 并注册为 Spring Bean（@Component）
 package com.example.javadoc.config;
 
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
@@ -739,7 +695,7 @@ FieldFill.INSERT_UPDATE   insert 和 update 时都填充
 
 > `strictInsertFill` / `strictUpdateFill` 只在字段值为 `null` 时才填充——如果调用方已经手动赋值，自动填充不会覆盖。
 
-### 5.3 主键策略：IdType
+### 6.3 主键策略：IdType
 
 MyBatis-Plus 支持多种主键生成策略：
 
@@ -766,92 +722,9 @@ private Long id;
 
 ---
 
-## 6. Service 层封装：IService 与 ServiceImpl
-
-`BaseMapper` 解决了 Mapper 层的 CRUD。MyBatis-Plus 进一步提供了 Service 层的通用接口——`IService<T>` 和 `ServiceImpl<M, T>`，封装了常用业务操作：
-
-> **Illustrative fragment** —— 展示 IService 的继承和使用。
-
-```java
-// 定义 Service 接口
-import com.baomidou.mybatisplus.extension.service.IService;
-import com.example.javadoc.module.user.entity.User;
-
-public interface UserService extends IService<User> {
-    // 可以添加自定义业务方法，也可以留空
-}
-
-// 实现类
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.example.javadoc.module.user.mapper.UserMapper;
-import com.example.javadoc.module.user.entity.User;
-import org.springframework.stereotype.Service;
-
-@Service
-public class UserServiceImpl extends ServiceImpl<UserMapper, User>
-        implements UserService {
-    // 已经拥有全部通用 Service 方法
-}
-```
-
-`IService<T>` 提供的常用方法（在 `BaseMapper` 基础上增加）：
-
-```
-IService<User> 新增的方法
-═══════════════════════════════════════════════════════════════════
-
-批量操作
-  boolean saveBatch(Collection<User> list)           批量插入
-  boolean saveOrUpdateBatch(Collection<User> list)   批量插入或更新
-  boolean removeBatchByIds(Collection<Long> ids)     批量删除
-
-链式调用
-  List<User> lambdaQuery()                           Lambda 链式查询
-       .eq(User::getAge, 25)
-       .list();
-
-  boolean lambdaUpdate()                             Lambda 链式更新
-       .eq(User::getStatus, 0)
-       .set(User::getStatus, 1)
-       .update();
-
-统计
-  long count()                                       总记录数
-  long count(Wrapper<User> wrapper)                  条件计数
-```
-
-在 Controller 中使用链式调用：
-
-```java
-@RestController
-@RequestMapping("/user")
-public class UserController {
-
-    private final UserService userService;
-
-    public UserController(UserService userService) {
-        this.userService = userService;
-    }
-
-    @GetMapping("/active")
-    public List<User> listActiveUsers() {
-        // 链式调用：查询年龄 > 18 且状态为活跃的用户
-        return userService.lambdaQuery()
-                .gt(User::getAge, 18)
-                .eq(User::getStatus, 1)
-                .orderByDesc(User::getCreateTime)
-                .list();
-    }
-}
-```
-
-> `IService` 不是必须的——你可以直接用 `BaseMapper`。但当你需要批量操作、链式调用、或统一 Service 层接口规范时，`IService` 是很好的选择。
-
----
-
 ## 7. 与原生 MyBatis 混用
 
-MyBatis-Plus 不替换 MyBatis。当遇到复杂查询（多表 JOIN、存储过程、自定义 SQL）时，你仍然可以用原生 MyBatis 的 XML 方式——两种方式可以在同一个 Mapper 接口中共存：
+MyBatis-Plus 不替换 MyBatis。`lambdaQuery()` / `LambdaQueryWrapper` 能处理单表的全部条件查询，但遇到**多表 JOIN**、存储过程、数据库特定语法等超出 Wrapper 表达能力的场景时，你仍然可以用原生 MyBatis 的 XML 方式——两种方式可以在同一个 Mapper 接口中共存：
 
 > **Illustrative fragment** —— 展示 MyBatis-Plus 与原生 MyBatis 的混用方式。
 
@@ -861,7 +734,7 @@ public interface UserMapper extends BaseMapper<User> {
     // ① MyBatis-Plus 自动提供的方法——无需 XML
     // selectById, insert, selectList(wrapper), ...
 
-    // ② 自定义复杂查询——用 XML 写 SQL
+    // ② 多表 JOIN 等超出 Wrapper 表达能力的查询——用 XML 写 SQL
     /** 查询用户及其订单总数（多表 JOIN + 子查询） */
     IPage<UserOrderStat> selectUserOrderStats(
             IPage<?> page,
@@ -893,21 +766,7 @@ public interface UserMapper extends BaseMapper<User> {
 </mapper>
 ```
 
-```
-Mapper 接口中的方法来源
-═══════════════════════════════════════════════════════════════════
-
-BaseMapper<User> 继承           自定义 XML 定义
-───────────────────            ─────────────────
-selectById(id)                 selectUserOrderStats(page, name)
-insert(entity)                 ...
-selectList(wrapper)
-selectPage(page, wrapper)
-deleteById(id)
-...
-```
-
-> **关键点**：自定义方法的分页也能自动工作——只要第一个参数是 `IPage` 类型，分页插件就会自动拦截并改写 SQL。这就是第 7 节 `IPage<UserOrderStat> selectUserOrderStats(IPage<?> page, ...)` 能自动分页的原因。
+> **关键点**：自定义方法的分页也能自动工作——只要第一个参数是 `IPage` 类型，分页插件就会自动拦截并改写 SQL。这就是本节 `IPage<UserOrderStat> selectUserOrderStats(IPage<?> page, ...)` 能自动分页的原因。
 
 ---
 
