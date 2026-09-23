@@ -14,7 +14,8 @@
    - [第三层：事务传播行为](#23-第三层事务传播行为)
 3. [事务隔离级别](#3-事务隔离级别)
 4. [事务失效的常见陷阱](#4-事务失效的常见陷阱)
-5. [速查清单](#5-速查清单)
+5. [多数据源下的事务管理](#5-多数据源下的事务管理)
+6. [速查清单](#6-速查清单)
 
 ---
 
@@ -745,9 +746,280 @@ ALTER TABLE account ENGINE = InnoDB;
 
 ---
 
-## 5. 速查清单
+## 5. 多数据源下的事务管理
 
-### 5.1 @Transactional 属性速查
+到目前为止，所有示例都假设项目只有**一个数据库**。但实际生产中，一个应用连接多个数据库很常见：账户数据在 MySQL，操作日志在另一个 MySQL；或者读写分离、微服务本地多库等。
+
+这就带来一个新问题：Spring 容器中有多个 `DataSource`，每个都需要自己的事务管理器。`@Transactional` 到底管哪个？
+
+### 5.1 问题：@Transactional 管哪个？
+
+回顾前面的内容：`@Transactional` 底层依赖一个 `PlatformTransactionManager` 来开启、提交、回滚事务。单数据源时，Spring Boot 自动配置了一个，你不用操心。
+
+但多数据源时，容器里会出现**多个** `PlatformTransactionManager`：
+
+```
+多数据源场景
+
+  Spring 容器
+  │
+  ├── DataSource A（账户库）──→ TransactionManager A
+  │                                    │
+  ├── DataSource B（日志库）──→ TransactionManager B
+  │                                    │
+  └── @Transactional ──→ 该用 A 还是 B？❓
+```
+
+`@Transactional` 不知道用哪个事务管理器时，Spring 会尝试找一个"默认"的。如果找不到，**启动直接报错**；如果找错了，事务**静默地管了错误的数据源**——和第 4 节的五大陷阱一样，不报错、不提示。
+
+### 5.2 定义多个事务管理器
+
+多数据源时，需要在配置类中为每个数据源定义独立的 `PlatformTransactionManager` Bean，并用 `@Bean("名称")` 给每个管理器命名：
+
+```java
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+
+import javax.sql.DataSource;
+
+@Configuration
+public class DataSourceConfig {
+
+    // 数据源 A：账户库
+    @Bean("accountDataSource")
+    public DataSource accountDataSource() {
+        // 配置账户库的连接信息（HikariCP 等连接池）
+        // ...
+    }
+
+    // 数据源 B：日志库
+    @Bean("logDataSource")
+    public DataSource logDataSource() {
+        // 配置日志库的连接信息
+        // ...
+    }
+
+    // 事务管理器 A：绑定账户库
+    @Bean("accountTransactionManager")
+    public PlatformTransactionManager accountTransactionManager() {
+        return new DataSourceTransactionManager(accountDataSource());
+    }
+
+    // 事务管理器 B：绑定日志库
+    @Bean("logTransactionManager")
+    public PlatformTransactionManager logTransactionManager() {
+        return new DataSourceTransactionManager(logDataSource());
+    }
+}
+```
+
+每个事务管理器绑定各自的数据源，互不干扰：
+
+```
+事务管理器与数据源的绑定关系
+
+  accountTransactionManager ──→ accountDataSource（账户库）
+        │
+        └── 管理 account 表的增删改查事务
+
+  logTransactionManager ──→ logDataSource（日志库）
+        │
+        └── 管理 log 表的增删改查事务
+```
+
+> **注意**：多数据源配置需要关闭 Spring Boot 的自动配置（`@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})`），否则 Spring Boot 会自动创建单数据源配置，和你的手动配置冲突。
+
+### 5.3 @Primary：标记默认事务管理器
+
+现在容器里有两个 `PlatformTransactionManager`。当 `@Transactional` 不指定用哪个时，Spring 怎么选？
+
+答案是：找标记了 **`@Primary`** 的那个。`@Primary` 的含义是"当容器中存在多个同类型的 Bean 时，优先使用我"。类比：**`@Primary` 就像"默认路由"**——你不指定走哪条路时，就走默认那条。
+
+```java
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+
+@Configuration
+public class DataSourceConfig {
+
+    @Bean("accountTransactionManager")
+    @Primary  // ← 标记为默认事务管理器
+    public PlatformTransactionManager accountTransactionManager() {
+        return new DataSourceTransactionManager(accountDataSource());
+    }
+
+    @Bean("logTransactionManager")
+    public PlatformTransactionManager logTransactionManager() {
+        return new DataSourceTransactionManager(logDataSource());
+    }
+}
+```
+
+加了 `@Primary` 后，`@Transactional` 的选择逻辑变成：
+
+```
+@Transactional 的事务管理器选择
+
+  @Transactional
+      │
+      ├── 指定了 transactionManager？
+      │       ├── 是 → 用指定的那个
+      │       └── 否 → 找 @Primary 标记的
+      │                   ├── 有 @Primary → 用它（默认） ✅
+      │                   └── 没有 @Primary → 启动报错 ❌
+      │                       NoUniqueBeanDefinitionException
+```
+
+> **实践建议**：多数据源项目中，一定要给"主业务"的事务管理器加 `@Primary`。大部分 Service 只操作主库，不指定 `transactionManager` 时自动走默认的，省去每个方法都手动指定的麻烦。
+
+### 5.4 @Transactional 指定事务管理器
+
+对于不使用默认事务管理器的 Service，通过 `@Transactional` 的 `transactionManager` 属性显式指定：
+
+```java
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class TransferService {
+
+    // 使用默认事务管理器（@Primary 标记的 accountTransactionManager）
+    @Transactional(rollbackFor = Exception.class)
+    public void transfer(Long fromId, Long toId, Double amount) {
+        accountRepo.debit(fromId, amount);  // 操作账户库
+        accountRepo.credit(toId, amount);
+    }
+}
+
+@Service
+public class LogService {
+
+    // 显式指定使用日志库的事务管理器
+    @Transactional(
+        transactionManager = "logTransactionManager",
+        rollbackFor = Exception.class
+    )
+    public void recordLog(String action) {
+        logRepo.save(new OperationLog(action));  // 操作日志库
+    }
+}
+```
+
+`transactionManager` 是 `@Transactional` 的属性。因为它是 `value` 属性（第一个属性），可以简写为：
+
+```java
+// 完整写法
+@Transactional(transactionManager = "logTransactionManager")
+
+// 简写（省略属性名，效果完全一样）
+@Transactional("logTransactionManager")
+```
+
+对比一下两种 Service 的事务走向：
+
+```
+指定 vs 不指定事务管理器
+
+  TransferService                          LogService
+  @Transactional                           @Transactional("logTransactionManager")
+       │                                        │
+       ▼                                        ▼
+  找 @Primary                              直接用 logTransactionManager
+       │                                        │
+       ▼                                        ▼
+  accountTransactionManager                logDataSource
+       │                                        │
+       ▼                                        ▼
+  accountDataSource                        log 表
+       │
+       ▼
+  account 表
+```
+
+### 5.5 常见注意事项
+
+#### 陷阱 1：忘了 @Primary
+
+多个 `PlatformTransactionManager` 都没有标记 `@Primary`，`@Transactional` 不指定名称时，Spring 不知道该用哪个，启动直接报错：
+
+```
+NoUniqueBeanDefinitionException: No qualifying bean of type
+'PlatformTransactionManager' available: expected single matching bean
+but found 2: accountTransactionManager, logTransactionManager
+```
+
+**解决**：给主业务的事务管理器加 `@Primary`，或者每个 `@Transactional` 都显式指定 `transactionManager`。
+
+#### 陷阱 2：Bean 名称拼写错误
+
+```java
+// 危险写法 ❌：名称拼错了！
+@Transactional(transactionManager = "acountTransactionManager")  // 少了个 "c"
+public void transfer(...) { ... }
+```
+
+编译器不会报错，运行时 Spring 找不到这个名称的 Bean 才报 `NoSuchBeanDefinitionException`。
+
+**解决**：定义 Bean 名称时复制粘贴，不要手打；或者用常量类集中管理事务管理器名称。
+
+#### 陷阱 3：跨数据源事务
+
+一个方法同时操作两个数据源时，Spring 本地事务**无法**协调两个事务管理器：
+
+```java
+// 危险写法 ❌：一个事务管理器管不了两个数据源
+@Transactional("accountTransactionManager")
+public void transferAndLog(Long fromId, Long toId, Double amount) {
+    accountRepo.debit(fromId, amount);   // 账户库 → 受 accountTransactionManager 管理
+    logRepo.save(new TransferLog(...));  // 日志库 → 不受当前事务管理器管理！
+}
+```
+
+`@Transactional` 只能管一个事务管理器对应的数据源。对另一个数据源的操作**不在同一个事务中**——账户扣款失败回滚，但日志可能已经提交了。
+
+> **边界提示**：跨数据源的原子性需要**分布式事务**方案（如 Seata、Saga 模式等），超出本指南范围。如果业务要求两个库"要么全成功要么全失败"，需要引入专门的分布式事务框架。
+
+#### 陷阱 4：事务管理器类型选错
+
+事务管理器类型必须和数据访问技术匹配：
+
+```
+数据访问技术              事务管理器类型
+══════════════════════════════════════════════
+JPA（Spring Data JPA）   JpaTransactionManager
+MyBatis / JDBC           DataSourceTransactionManager
+```
+
+用错了类型，事务行为可能不正确——比如 JPA 的 `EntityManager` 绑定在 `JpaTransactionManager` 上，用 `DataSourceTransactionManager` 管理不到 JPA 的事务。
+
+### 本节回顾
+
+```
+多数据源事务管理决策
+
+有几个数据源？
+    │
+    ├── 一个 → 不用管，Spring Boot 自动配置（回到第 2 节）
+    │
+    └── 多个 → 定义多个 TransactionManager
+                │
+                ├── 哪个是主业务？ → 加 @Primary
+                │
+                ├── 非主业务的 Service → @Transactional("xxxTransactionManager")
+                │
+                └── 一个方法操作两个库？ → 本地事务做不到，需要分布式事务方案
+```
+
+---
+
+## 6. 速查清单
+
+### 6.1 @Transactional 属性速查
 
 ```
 属性                   默认值                       作用
@@ -760,7 +1032,7 @@ rollbackFor           RuntimeException.class       触发回滚的异常类型
 noRollbackFor         {}                           不触发回滚的异常类型
 ```
 
-### 5.2 传播行为完整对照
+### 6.2 传播行为完整对照
 
 ```
 传播行为              外层有事务时         外层无事务时         典型场景
@@ -776,7 +1048,7 @@ MANDATORY            加入外层事务         抛异常              确保必
 
 > **保存点（Savepoint）**：NESTED 传播行为使用数据库的保存点机制。保存点是事务中的一个"标记点"，可以回滚到这个点而不回滚整个事务。SQL 类比：`SAVEPOINT sp1; ... ROLLBACK TO sp1;`。MySQL InnoDB 支持保存点。
 
-### 5.3 隔离级别速查
+### 6.3 隔离级别速查
 
 ```
 隔离级别              脏读      不可重复读   幻读      性能
@@ -790,7 +1062,7 @@ SERIALIZABLE         ✓ 安全    ✓ 安全      ✓ 安全      最低
 * MySQL InnoDB 的 REPEATABLE_READ 通过 MVCC 也能避免幻读，比标准 SQL 更强
 ```
 
-### 5.4 失效场景速查
+### 6.4 失效场景速查
 
 ```
 陷阱                  症状                           解决方案
@@ -803,7 +1075,7 @@ private 方法        不报错，事务不生效               改为 public
 MyISAM 引擎         不报错，回滚不生效               ALTER TABLE 改 InnoDB
 ```
 
-### 5.5 回滚规则速查
+### 6.5 回滚规则速查
 
 ```
 异常类型                           默认行为      rollbackFor = Exception.class
@@ -815,7 +1087,7 @@ checked Exception（如 IOException） 不回滚 ❌    回滚 ✅
 推荐写法：始终使用 @Transactional(rollbackFor = Exception.class)
 ```
 
-### 5.6 用法模板
+### 6.6 用法模板
 
 ```java
 // 标准写法（推荐）
@@ -841,4 +1113,17 @@ public List<Product> findAll() {
 public void businessMethod() {
     // 业务逻辑
 }
+```
+
+### 6.7 多数据源事务管理器速查
+
+```
+场景                              做法
+═════════════════════════════════════════════════════════════════
+单数据源                          不用管，Spring Boot 自动配置
+多数据源，有主有次                 主库事务管理器加 @Primary，其余显式指定
+多数据源，无主次                   每个 @Transactional 都指定 transactionManager
+一个方法操作两个库                 本地事务做不到，需要分布式事务方案
+JPA 项目                          JpaTransactionManager
+MyBatis / JDBC 项目              DataSourceTransactionManager
 ```
