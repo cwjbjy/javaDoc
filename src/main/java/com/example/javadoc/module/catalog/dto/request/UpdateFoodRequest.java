@@ -26,7 +26,7 @@ public record UpdateFoodRequest(
         @Schema(description = "新图片 URL（替换旧图）")
         @JsonProperty("image")
         String imageUrl,
-        @Schema(description = "旧图片路径（用于删除旧文件）")
+        @Schema(description = "旧图片路径（历史兼容字段；服务端以数据库当前图片为准）")
         @JsonProperty("oldImage")
         String oldImageUrl) {
 }

@@ -4,6 +4,7 @@ server:
 spring:
   mongodb:
     uri: mongodb://market:123456@47.100.239.163:27017/market
+    auto-index-creation: true
   servlet:
     multipart:
       max-file-size: 10MB

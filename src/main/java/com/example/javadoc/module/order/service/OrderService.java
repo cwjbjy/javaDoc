@@ -6,6 +6,7 @@ import com.example.javadoc.module.order.dto.response.OrderListResponse;
 import com.example.javadoc.module.order.dto.response.OrderResponse;
 import com.example.javadoc.module.order.entity.Order;
 import com.example.javadoc.module.order.repository.OrderRepository;
+import com.example.javadoc.module.order.repository.OrderWriteRepository;
 import com.example.javadoc.module.order.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +19,7 @@ import java.util.List;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final OrderWriteRepository orderWriteRepository;
     private final OrderMapper orderMapper;
 
     public OrderResponse createOrder(CreateOrderRequest request) {
@@ -39,7 +41,9 @@ public class OrderService {
     }
 
     public String deleteOrder(DeleteOrderRequest request) {
-        orderRepository.deleteById(request.id());
+        if (orderWriteRepository.deleteById(request.id()).getDeletedCount() != 1) {
+            throw new IllegalArgumentException("订单不存在");
+        }
         return "删除成功";
     }
 }

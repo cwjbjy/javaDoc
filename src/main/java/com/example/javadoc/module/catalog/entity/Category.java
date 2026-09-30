@@ -3,6 +3,7 @@ package com.example.javadoc.module.catalog.entity;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.TypeAlias;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -21,6 +22,7 @@ import java.util.List;
 public class Category {
     @Id
     private String id;
+    @Indexed(unique = true)
     private String name;
     @Field("image")
     private String imageUrl;
