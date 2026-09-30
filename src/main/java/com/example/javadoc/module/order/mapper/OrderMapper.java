@@ -1,7 +1,7 @@
 package com.example.javadoc.module.order.mapper;
 
-import com.example.javadoc.module.order.dto.request.CreateOrderDTO;
-import com.example.javadoc.module.order.dto.response.OrderFoodItemResponse;
+import com.example.javadoc.module.order.dto.request.CreateOrderRequest;
+import com.example.javadoc.module.order.dto.response.OrderItemResponse;
 import com.example.javadoc.module.order.dto.response.OrderResponse;
 import com.example.javadoc.module.order.entity.Order;
 import org.mapstruct.Mapper;
@@ -15,13 +15,13 @@ public interface OrderMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", expression = "java(new Date())")
-    Order toEntity(CreateOrderDTO dto);
+    Order toEntity(CreateOrderRequest request);
 
-    Order.OrderFoodItem toItem(CreateOrderDTO.OrderFoodDTO dto);
+    Order.OrderItem toItem(CreateOrderRequest.OrderItemRequest request);
 
     OrderResponse toResponse(Order order);
 
-    OrderFoodItemResponse toFoodItemResponse(Order.OrderFoodItem foodItem);
+    OrderItemResponse toItemResponse(Order.OrderItem item);
 
     List<OrderResponse> toResponseList(List<Order> orders);
 }

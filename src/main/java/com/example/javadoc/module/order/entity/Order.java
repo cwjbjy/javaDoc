@@ -2,7 +2,9 @@ package com.example.javadoc.module.order.entity;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.TypeAlias;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -15,16 +17,22 @@ public class Order {
     private String id;
     private String date;
     private Date createdAt;
-    private Integer num;
-    private List<OrderFoodItem> foods = new ArrayList<>();
+    @Field("num")
+    private Integer totalQuantity;
+    private List<OrderItem> foods = new ArrayList<>();
 
     @Data
-    public static class OrderFoodItem {
+    @TypeAlias("com.example.javadoc.module.order.entity.Order$OrderFoodItem")
+    public static class OrderItem {
         private String id;
         private String name;
-        private String describe;
-        private String burden;
-        private String image;
-        private Integer value;
+        @Field("describe")
+        private String description;
+        @Field("burden")
+        private String ingredients;
+        @Field("image")
+        private String imageUrl;
+        @Field("value")
+        private Integer quantity;
     }
 }

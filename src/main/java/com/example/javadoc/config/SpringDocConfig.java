@@ -58,7 +58,7 @@ public class SpringDocConfig {
     @Bean
     public GroupedOpenApi marketApi() {
         return GroupedOpenApi.builder()
-                .group("市场管理")
+                .group("菜单管理")
                 .pathsToMatch("/api/market/**")
                 .build();
     }

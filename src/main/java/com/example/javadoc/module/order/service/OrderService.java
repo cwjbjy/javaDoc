@@ -1,20 +1,18 @@
 package com.example.javadoc.module.order.service;
 
-import com.example.javadoc.module.order.dto.request.CreateOrderDTO;
-import com.example.javadoc.module.order.dto.request.DeleteOrderDTO;
+import com.example.javadoc.module.order.dto.request.CreateOrderRequest;
+import com.example.javadoc.module.order.dto.request.DeleteOrderRequest;
 import com.example.javadoc.module.order.dto.response.OrderListResponse;
 import com.example.javadoc.module.order.dto.response.OrderResponse;
 import com.example.javadoc.module.order.entity.Order;
-import com.example.javadoc.module.order.entity.OrderRepository;
+import com.example.javadoc.module.order.repository.OrderRepository;
 import com.example.javadoc.module.order.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -22,13 +20,13 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
 
-    public OrderResponse create(CreateOrderDTO dto) {
-        Order order = orderMapper.toEntity(dto);
+    public OrderResponse createOrder(CreateOrderRequest request) {
+        Order order = orderMapper.toEntity(request);
         Order saved = orderRepository.save(order);
         return orderMapper.toResponse(saved);
     }
 
-    public OrderListResponse find(int skip, int pageSize) {
+    public OrderListResponse listOrders(int skip, int pageSize) {
         PageRequest pageRequest = PageRequest.of(skip / pageSize, pageSize);
         List<Order> orders = orderRepository.findAll(pageRequest.withSort(
                 org.springframework.data.domain.Sort.by(
@@ -40,8 +38,8 @@ public class OrderService {
         return new OrderListResponse(orderResponses, total);
     }
 
-    public String remove(DeleteOrderDTO dto) {
-        orderRepository.deleteById(dto.id());
+    public String deleteOrder(DeleteOrderRequest request) {
+        orderRepository.deleteById(request.id());
         return "删除成功";
     }
 }

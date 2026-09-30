@@ -1,5 +1,7 @@
 package com.example.javadoc.module.order.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.Date;
@@ -13,7 +15,8 @@ public record OrderResponse(
         @Schema(description = "订单创建时间")
         Date createdAt,
         @Schema(description = "订单菜品总数", example = "3")
-        Integer num,
+        @JsonProperty("num")
+        Integer totalQuantity,
         @Schema(description = "订单菜品列表")
-        List<OrderFoodItemResponse> foods) {
+        List<OrderItemResponse> foods) {
 }
