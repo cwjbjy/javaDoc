@@ -4,13 +4,13 @@
 
 ## 技术栈版本
 
-| 组件 | 版本 | 说明 |
-|------|------|------|
-| Spring Boot | 4.0.7 | 最新稳定版 |
+| 组件               | 版本  | 说明                 |
+| ------------------ | ----- | -------------------- |
+| Spring Boot        | 4.0.7 | 最新稳定版           |
 | Spring Boot WebMVC | 4.0.7 | Web 框架，含 Jackson |
-| Spring Data Redis | 4.0.6 | 官方 Starter |
-| Lettuce | 6.8.x | 默认连接池（推荐） |
-| Redis Server | 7.x | 服务端版本 |
+| Spring Data Redis  | 4.0.6 | 官方 Starter         |
+| Lettuce            | 6.8.x | 默认客户端（推荐）   |
+| Redis Server       | 7.x   | 服务端版本           |
 
 ---
 
@@ -58,7 +58,7 @@ spring:
       # 单节点模式
       host: localhost
       port: 6379
-      password: ${REDIS_PASSWORD:}  # 环境变量注入，默认空
+      password: ${REDIS_PASSWORD:} # 环境变量注入，默认空
       database: 0
       timeout: 5s
 
@@ -66,11 +66,11 @@ spring:
       lettuce:
         pool:
           enabled: true
-          max-active: 16              # 最大连接数
-          max-idle: 8                 # 最大空闲连接
-          min-idle: 4                 # 最小空闲连接
-          max-wait: 5s                # 最大等待时间
-          time-between-eviction-runs: 30s  # 空闲连接检测周期
+          max-active: 16 # 最大连接数
+          max-idle: 8 # 最大空闲连接
+          min-idle: 4 # 最小空闲连接
+          max-wait: 5s # 最大等待时间
+          time-between-eviction-runs: 30s # 空闲连接检测周期
         shutdown-timeout: 200ms
 
       # 集群模式配置（生产环境）
@@ -91,16 +91,41 @@ spring:
 # 自定义缓存配置
 cache:
   redis:
-    default-ttl: 30m              # 默认过期时间
-    user-ttl: 60m                 # 用户数据过期时间
-    token-ttl: 24h                # Token过期时间
+    default-ttl: 30m # 默认过期时间
+    user-ttl: 60m # 用户数据过期时间
+    token-ttl: 24h # Token过期时间
 ```
 
-### 1.3 Lettuce连接池详解
+### 1.3 Lettuce 与连接池详解
 
-> **核心问题**：Lettuce 基于 Netty，单个连接即可多路复用（一个连接并发处理多个命令），为什么还需要连接池？
+> **Lettuce 是 Spring Boot 默认的 Redis Java 客户端，基于 Netty 构建，线程安全，单个连接即可并发处理多个命令。**
 
-**连接池不是为"并发"而生，而是为"吞吐"而生。**
+Spring Boot 2.x 起将默认 Redis 客户端从 Jedis 换成 Lettuce，4.x 延续该默认（`spring.data.redis.client-type` 可显式切换）。两者核心差异：
+
+| 对比维度        | Lettuce                        | Jedis                                  |
+| --------------- | ------------------------------ | -------------------------------------- |
+| 底层 IO 模型    | Netty，异步非阻塞              | 传统阻塞 IO                            |
+| 线程安全        | 连接实例线程安全，多线程可共享 | 实例非线程安全，多线程必须用 JedisPool |
+| 连接模型        | 单连接多路复用，连接池可选     | 依赖连接池支撑并发                     |
+| 异步/响应式 API | 原生支持                       | 不支持                                 |
+
+**共享连接模型**（Lettuce 默认行为，`share-native-connection: true`）：
+
+```
+Thread-1 ─┐
+Thread-2 ─┼──→ 共享 1 个原生连接 ──→ Redis
+Thread-3 ─┘   （Netty 事件循环，命令交错收发）
+```
+
+底层通过 Netty 事件循环在同一连接上交错收发多个命令，无需为每个线程建立独立连接。
+
+**与本文的关系**：本文所有操作都走 `StringRedisTemplate`（Spring Data Redis 抽象层），Lettuce 藏在底层由 Boot 自动配置，业务代码不直接接触它。理解其连接模型，是为了看懂接下来的连接池决策。
+
+**shutdown-timeout**：应用关闭时等待 Lettuce 客户端优雅关闭（完成在途命令、关闭连接）的最长时间，默认 100ms，超时则强制关闭。1.2 节配置为 200ms，给在途命令留出收尾时间。
+
+**为什么还需要连接池？**
+
+> **核心问题**：Lettuce 单连接已能多路复用（一个连接并发处理多个命令），为什么还需要连接池？—— **连接池不是为"并发"而生，而是为"吞吐"而生。**
 
 ```
 单连接模式（无 commons-pool2）：
@@ -118,22 +143,22 @@ cache:
 ```
 
 | 对比维度 | 无连接池（默认） | 有连接池（commons-pool2） |
-|---------|----------------|--------------------------|
-| 连接数 | 1个 | max-active 个（默认8） |
-| 并发模型 | 单连接多路复用 | 多连接 + 多路复用 |
-| 适用场景 | 低并发、简单应用 | 高并发、生产环境 |
-| 阻塞风险 | 高负载时排队等待 | 连接充足时无等待 |
-| 额外依赖 | 无 | commons-pool2 |
+| -------- | ---------------- | ------------------------- |
+| 连接数   | 1个              | max-active 个（默认8）    |
+| 并发模型 | 单连接多路复用   | 多连接 + 多路复用         |
+| 适用场景 | 低并发、简单应用 | 高并发、生产环境          |
+| 阻塞风险 | 高负载时排队等待 | 连接充足时无等待          |
+| 额外依赖 | 无               | commons-pool2             |
 
 **参数说明与推荐值**：
 
-| 参数 | 含义 | 推荐值 | 说明 |
-|------|------|--------|------|
-| `max-active` | 最大连接数 | 16 | 并非越大越好，Redis 单线程，过大无意义 |
-| `max-idle` | 最大空闲连接 | 8 | 略大于平均并发，避免频繁创建销毁 |
-| `min-idle` | 最小空闲连接 | 4 | **建议 > 0**，避免突发流量时的冷启动开销 |
-| `max-wait` | 等待超时 | 5s | 连接耗尽时最大等待时间，超时抛异常 |
-| `time-between-eviction-runs` | 空闲检测间隔 | 30s | 定期回收超出 `max-idle` 的空闲连接 |
+| 参数                         | 含义         | 推荐值 | 说明                                     |
+| ---------------------------- | ------------ | ------ | ---------------------------------------- |
+| `max-active`                 | 最大连接数   | 16     | 并非越大越好，Redis 单线程，过大无意义   |
+| `max-idle`                   | 最大空闲连接 | 8      | 略大于平均并发，避免频繁创建销毁         |
+| `min-idle`                   | 最小空闲连接 | 4      | **建议 > 0**，避免突发流量时的冷启动开销 |
+| `max-wait`                   | 等待超时     | 5s     | 连接耗尽时最大等待时间，超时抛异常       |
+| `time-between-eviction-runs` | 空闲检测间隔 | 30s    | 定期回收超出 `max-idle` 的空闲连接       |
 
 **调优公式**（估算 `max-active`）：
 
@@ -149,6 +174,7 @@ max-active ≈ 业务QPS × 单次Redis操作平均耗时(s)
 ```
 
 > **注意事项**：
+>
 > - `max-active` 设太大浪费内存，太小导致 `max-wait` 超时
 > - `min-idle > 0` 可平稳承接突发流量，默认 0 意味着空闲时池子为空
 > - Redis 单线程处理命令，16 个连接通常够用，瓶颈在业务逻辑而非连接数
@@ -1122,24 +1148,24 @@ leaderboard:daily:{yyyyMMdd}
 
 统一使用 `StringRedisTemplate` + Jackson `ObjectMapper` 手动序列化。
 
-| 场景 | 方式 | 原因 |
-|------|------|------|
-| 写入对象 | `objectMapper.writeValueAsString(obj)` → `stringRedisTemplate.opsForValue().set(key, json)` | 可读、可调试、跨语言兼容 |
-| 读取对象 | `stringRedisTemplate.opsForValue().get(key)` → `objectMapper.readValue(json, User.class)` | 类型由调用方控制，无擦除风险 |
-| Hash 存对象 | `hSet` 存 JSON 字符串，`hGet(key, field, User.class)` 带类型读取 | 避免 `Object.class` 反序列化为 `LinkedHashMap` |
+| 场景        | 方式                                                                                        | 原因                                           |
+| ----------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 写入对象    | `objectMapper.writeValueAsString(obj)` → `stringRedisTemplate.opsForValue().set(key, json)` | 可读、可调试、跨语言兼容                       |
+| 读取对象    | `stringRedisTemplate.opsForValue().get(key)` → `objectMapper.readValue(json, User.class)`   | 类型由调用方控制，无擦除风险                   |
+| Hash 存对象 | `hSet` 存 JSON 字符串，`hGet(key, field, User.class)` 带类型读取                            | 避免 `Object.class` 反序列化为 `LinkedHashMap` |
 
 > **为什么不用 `RedisTemplate` 或 Spring Cache 注解？** `RedisTemplate` 的序列化器绑定全局类型（如 `JacksonJsonRedisSerializer(Object.class)`），反序列化时类信息丢失，对象变 `LinkedHashMap`。Spring Cache 注解隐式序列化，类型不可控，排查困难。`StringRedisTemplate` + 手动 JSON 反序列化把类型交给调用方，每个方法知道自己要什么类型，Redis 中存储的是可读字符串，排查问题直接 `redis-cli` 查看。
 
 ### 7.3 过期策略
 
-| 数据类型 | 过期时间 | 说明 |
-|---------|---------|------|
-| 用户信息 | 60分钟 | 变化较频繁 |
-| 订单数据 | 30分钟 | 变化频繁 |
-| 商品信息 | 24小时 | 相对稳定 |
-| 字典数据 | 7天 | 几乎不变 |
-| Token | 24小时 | 安全考虑 |
-| 空值防穿透 | 5分钟 | 短期保护 |
+| 数据类型   | 过期时间 | 说明       |
+| ---------- | -------- | ---------- |
+| 用户信息   | 60分钟   | 变化较频繁 |
+| 订单数据   | 30分钟   | 变化频繁   |
+| 商品信息   | 24小时   | 相对稳定   |
+| 字典数据   | 7天      | 几乎不变   |
+| Token      | 24小时   | 安全考虑   |
+| 空值防穿透 | 5分钟    | 短期保护   |
 
 ### 7.4 生产环境检查清单
 

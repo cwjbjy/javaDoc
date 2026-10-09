@@ -2,7 +2,7 @@
 
 > 本指南系统介绍 Spring Cloud 微服务完整知识体系。先建立分布式认知（为什么需要微服务、全景架构），再逐类深入服务发现、远程调用、网关、配置中心、熔断降级、链路追踪、异步消息、安全。每章一个问题驱动，同一「电商三服务」场景贯穿全文。
 >
-> 技术栈基线：Spring Boot 3.5.14 / Spring Cloud 2025.0.0 / Spring Cloud Alibaba 2025.0.0.0 / Nacos Client 3.0.3 / Java 17；链路追踪 SkyWalking 9.x；消息队列 RabbitMQ 3.13 + Kafka 3.x。后续新增组件时必须先验证它们与这组依赖的兼容性。
+> 技术栈基线：Spring Boot 3.5.14 / Spring Cloud 2025.0.0 / Spring Cloud Alibaba 2025.0.0.0 / Nacos Client 3.0.3 / Resilience4j 2.x / Java 17；链路追踪 SkyWalking 9.x；消息队列 RabbitMQ 3.13 + Kafka 3.x。后续新增组件时必须先验证它们与这组依赖的兼容性。
 >
 > 面向读者：已掌握 Spring Boot 单体开发（IoC/DI、MVC、Security、数据访问、异常处理），准备学习微服务的开发者。如果你是前端出身，指南中嵌入了前端类比帮你快速建立直觉。
 
@@ -41,14 +41,14 @@
    - [4.4 CORS 统一配置](#44-cors-统一配置)
    - [4.5 生产实践：网关超时配置](#45-生产实践网关超时配置)
    - [4.6 本节回顾](#46-本节回顾)
-5. [服务容错 — Sentinel](#5-服务容错--sentinel)
+5. [服务容错 — Resilience4j](#5-服务容错--resilience4j)
    - [5.0 问题：雪崩效应](#50-问题雪崩效应)
-   - [5.1 Sentinel 是什么](#51-sentinel-是什么)
-   - [5.2 三步接入 Sentinel](#52-三步接入-sentinel)
-   - [5.3 流量控制：QPS 限流](#53-流量控制qps-限流)
-   - [5.4 熔断降级：慢调用自动熔断](#54-熔断降级慢调用自动熔断)
-   - [5.5 Sentinel 规则类型速览](#55-sentinel-规则类型速览)
-   - [5.6 生产实践：规则持久化到 Nacos 与网关流控](#56-生产实践规则持久化到-nacos-与网关流控)
+   - [5.1 Resilience4j 是什么](#51-resilience4j-是什么)
+   - [5.2 两步接入 Resilience4j](#52-两步接入-resilience4j)
+   - [5.3 流量控制：RateLimiter 限流](#53-流量控制ratelimiter-限流)
+   - [5.4 熔断降级：CircuitBreaker 慢调用熔断](#54-熔断降级circuitbreaker-慢调用熔断)
+   - [5.5 Resilience4j 核心模块速览](#55-resilience4j-核心模块速览)
+   - [5.6 生产实践：指标暴露、配置中心与网关限流](#56-生产实践指标暴露配置中心与网关限流)
    - [5.7 本节回顾](#57-本节回顾)
 6. [分布式链路追踪 — SkyWalking](#6-分布式链路追踪--skywalking)
    - [6.0 问题：跨服务请求像黑盒](#60-问题跨服务请求像黑盒)
@@ -131,14 +131,14 @@
            │                  │                  │
            └──────────────────┼──────────────────┘
                               │
-        服务注册 / 配置拉取 / 心跳上报 / 链路数据上报 / 规则下发
+        服务注册 / 配置拉取 / 心跳上报 / 链路数据上报
                               │
         ┌─────────────────────┼─────────────────────┐
         │                     │                     │
   ┌─────▼─────┐  ┌───────────▼──┐  ┌──────────────▼──┐
-  │   Nacos   │  │   Sentinel   │  │   SkyWalking    │
-  │ 服务注册  │  │ 流量控制     │  │ 链路追踪可视化   │
-  │ 配置中心  │  │ 熔断降级     │  │ 服务拓扑 + 告警  │
+  │   Nacos   │  │ Resilience4j │  │   SkyWalking    │
+  │ 服务注册  │  │ 熔断限流(内嵌)│  │ 链路追踪可视化   │
+  │ 配置中心  │  │ 重试/隔离舱  │  │ 服务拓扑 + 告警  │
   └───────────┘  └──────────────┘  └─────────────────┘
 
         ┌─────────────────────┴─────────────────────┐
@@ -152,15 +152,15 @@
 
 **各组件的职责一句话**：
 
-| 组件           | 解决什么问题        | 在什么位置                                         |
-| -------------- | ------------------- | -------------------------------------------------- |
-| **Nacos**      | 服务发现 + 配置管理 | 基础层：所有服务启动时向它注册，调用时从它查询地址 |
-| **OpenFeign**  | 服务间 HTTP 调用    | 通信层：业务服务之间互相调用的工具                 |
-| **Gateway**    | 统一入口 + 路由转发 | 边界层：客户端唯一入口，内网服务不直接暴露         |
-| **Sentinel**   | 防止级联故障        | 防御层：嵌入在每个服务中，监控调用、限流、熔断     |
-| **SkyWalking** | 定位调用链瓶颈      | 观测层：agent 探针零侵入采集调用数据，画拓扑图     |
-| **RabbitMQ**   | 业务异步解耦        | 消息层：订单通知、任务派发等业务消息，强调可靠投递 |
-| **Kafka**      | 高吞吐数据管道      | 消息层：日志、行为埋点、数据同步，强调吞吐与回放   |
+| 组件             | 解决什么问题        | 在什么位置                                               |
+| ---------------- | ------------------- | -------------------------------------------------------- |
+| **Nacos**        | 服务发现 + 配置管理 | 基础层：所有服务启动时向它注册，调用时从它查询地址       |
+| **OpenFeign**    | 服务间 HTTP 调用    | 通信层：业务服务之间互相调用的工具                       |
+| **Gateway**      | 统一入口 + 路由转发 | 边界层：客户端唯一入口，内网服务不直接暴露               |
+| **Resilience4j** | 防止级联故障        | 防御层：纯库内嵌于每个服务，提供熔断、限流、重试、隔离舱 |
+| **SkyWalking**   | 定位调用链瓶颈      | 观测层：agent 探针零侵入采集调用数据，画拓扑图           |
+| **RabbitMQ**     | 业务异步解耦        | 消息层：订单通知、任务派发等业务消息，强调可靠投递       |
+| **Kafka**        | 高吞吐数据管道      | 消息层：日志、行为埋点、数据同步，强调吞吐与回放         |
 
 > **为什么消息队列有两个？** 这不是重复建设。RabbitMQ 擅长"一条消息必须可靠送达一个消费者"的业务场景（路由灵活、确认机制完善），Kafka 擅长"海量数据持续流过、多方订阅、可回放"的数据管道场景（顺序写磁盘、分区水平扩展）。真实生产环境经常两个都用：业务事件走 RabbitMQ，日志和行为数据走 Kafka。§9.5 有完整对比。
 
@@ -175,8 +175,10 @@ Spring Boot          3.5.14          ← 当前项目基座
            │
            └── Spring Cloud Alibaba  2025.0.0.0  ← 当前项目导入的 BOM
                    │
-                   ├── Nacos Client   3.0.3
-                   └── Sentinel       1.8.9
+                   └── Nacos Client   3.0.3
+
+Spring Cloud 官方模块：
+                   └── Resilience4j   2.x（通过 spring-cloud-starter-circuitbreaker-resilience4j 引入）
 
 独立组件（不在上述 BOM 内，版本单独选择）：
                    ├── SkyWalking     9.x（agent + OAP + UI，agent 与应用依赖解耦）
@@ -194,13 +196,13 @@ Spring Boot          3.5.14          ← 当前项目基座
 远程调用             OpenFeign（声明式 HTTP）                OpenFeign / Dubbo
 网关                 Spring Cloud Gateway                   Spring Cloud Gateway
 配置中心             Spring Cloud Config / Consul           Nacos ★
-熔断降级             Resilience4j                          Sentinel ★
+熔断降级             Resilience4j ★                        Sentinel
 链路追踪             Micrometer Tracing + Zipkin            SkyWalking（国内采用率极高）
 消息队列             RabbitMQ / Kafka                       RabbitMQ / Kafka / RocketMQ
 分布式事务           自研 / Saga 模式                       Seata（AT 模式）★（见 §12.1 延伸阅读）
 ```
 
-> 标 ★ 的是 Spring Cloud Alibaba 组件。2019 年 Netflix 宣布技术栈进入维护模式后，国内企业大规模从 Eureka + Hystrix 迁移到 Nacos + Sentinel——阿里系组件在双十一级别场景下久经考验，中文社区活跃，且提供注册 + 配置 + 熔断的一站式方案，无需拼凑多个项目。本指南因此选择 Spring Cloud Alibaba 作为核心依赖；链路追踪选择 SkyWalking（国产 Apache 顶级项目，agent 探针对代码零侵入，国内企业采用率极高）；消息队列选择 RabbitMQ + Kafka 双栈（生产环境最常见的组合）。
+> 标 ★ 的是 Spring Cloud Alibaba 组件或 Spring Cloud 官方推荐模块。2019 年 Netflix 宣布技术栈进入维护模式后，国内企业大规模从 Eureka + Hystrix 迁移到 Nacos——阿里系组件在双十一级别场景下久经考验，中文社区活跃，且提供注册 + 配置的一站式方案。本指南因此选择 Nacos 作为注册中心与配置中心；熔断降级选择 Resilience4j（Spring Cloud 官方推荐，纯库无额外部署，与 Micrometer 天然集成）；链路追踪选择 SkyWalking（国产 Apache 顶级项目，agent 探针对代码零侵入，国内企业采用率极高）；消息队列选择 RabbitMQ + Kafka 双栈（生产环境最常见的组合）。
 
 ### 1.3 贯穿场景：电商三服务
 
@@ -218,7 +220,7 @@ Gateway (:8080)                              ← JWT 统一认证（§7）
     ▼
 order-service (:8083)
     │
-    ├──→ Feign 调用 product-service (:8082)  ← Sentinel 熔断保护（§5）
+    ├──→ Feign 调用 product-service (:8082)  ← Resilience4j 熔断保护（§5）
     │    查询商品信息、扣减库存
     │
     ├──→ Feign 调用 user-service (:8081)
@@ -240,7 +242,7 @@ order-service (:8083)
 - **服务发现**：order-service 调用 product-service 时，用服务名而非 IP
 - **远程调用**：Feign 声明式接口完成跨服务 HTTP 通信
 - **网关**：前端只调用 Gateway，不关心后端有几个服务
-- **容错**：如果 product-service 响应慢，Sentinel 熔断保护 order-service
+- **容错**：如果 product-service 响应慢，Resilience4j 熔断保护 order-service
 - **追踪**：一次下单请求的完整链路在 SkyWalking 中可视化
 - **异步消息**：发通知这种"做了就行、不用等"的事交给 RabbitMQ；行为日志这种"量大、要分析"的数据交给 Kafka
 
@@ -342,7 +344,7 @@ volumes:
 
 > **启动顺序**：使用当前 Compose 时直接执行 `docker compose up -d`。`nacos-init` 通过健康检查等待 Nacos 后再导入配置；它完成后显示 `Exited (0)` 是正常状态。
 >
-> **首期范围**：当前 Compose 只启动 Nacos、三个 MySQL 和 `nacos-init`。Sentinel Dashboard、SkyWalking OAP、RabbitMQ、Kafka 是本指南后续章节的学习主题，暂未接入当前项目；学习对应章节时，按该章节给出的独立 `docker run` / Compose 配置添加即可（§5.2、§6.3、§8.2、§9.2）。
+> **首期范围**：当前 Compose 只启动 Nacos、三个 MySQL 和 `nacos-init`。SkyWalking OAP、RabbitMQ、Kafka 是本指南后续章节的学习主题，暂未接入当前项目；学习对应章节时，按该章节给出的独立 `docker run` / Compose 配置添加即可（§6.3、§8.2、§9.2）。Resilience4j 为纯库，无需额外容器。
 
 ---
 
@@ -781,6 +783,52 @@ public class FeignConfig {
 
 Token 自动从 order-service → product-service 透传，无需每个接口手动处理。
 
+**两种模式对比**：实际项目中有两种常见做法，根据业务需求选择：
+
+| 模式             | 适用场景                                                             | FeignInterceptor 做什么      |
+| ---------------- | -------------------------------------------------------------------- | ---------------------------- |
+| **Token 透传**   | 下游服务需要校验用户权限（如：商品服务判断用户是否有权限查看某商品） | 透传 `Authorization` 头      |
+| **内部可信调用** | 认证在网关统一处理，服务间互信（只传 TraceId 用于日志追踪）          | 只透传 `TraceId`，不传 Token |
+
+上面的代码是 Token 透传模式。如果你的项目采用“网关统一认证 + 服务间可信调用”，拦截器只需传递 TraceId：
+
+```java
+// 内部可信调用模式：只传 TraceId，不传 Token
+@Bean
+public RequestInterceptor requestInterceptor() {
+    return template -> {
+        String traceId = MDC.get("traceId");  // 从日志上下文获取
+        if (traceId != null) {
+            template.header("X-Trace-Id", traceId);
+        }
+    };
+}
+```
+
+**MDC 是什么？** MDC（Mapped Diagnostic Context，映射诊断上下文）是 SLF4J/Logback 提供的**线程级日志上下文**机制。简单说：它让同一线程内的所有日志自动带上相同的信息（如 TraceId）。
+
+```
+请求进入 → Filter/AOP 生成 TraceId → MDC.put("traceId", "abc123")
+                                             │
+                                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  同一线程内所有日志自动带上 TraceId：                        │
+│                                                             │
+│  10:30:01 INFO  [traceId=abc123] 收到请求 /api/orders      │
+│  10:30:02 INFO  [traceId=abc123] 调用商品服务              │
+│  10:30:03 INFO  [traceId=abc123] 返回结果                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**TraceId 从哪来？** 两种常见来源：
+
+- **SkyWalking Agent**：自动注入，key 是 `TID`（大写），代码中用 `MDC.get("TID")` 获取
+- **自定义 Filter**：项目自己生成 UUID，用 `MDC.put("traceId", uuid)` 存入
+
+你的项目如果用了 SkyWalking，把上面代码的 key 改成 `TID` 即可。
+
+大多数企业项目采用**内部可信调用**模式——认证只在网关做一次，服务间不再重复校验，性能更好、代码更简单。
+
 ### 3.5 生产实践：Feign API 模块独立成 jar
 
 §3.2 的写法是"调用方定义接口"。服务一多就会出现重复：
@@ -1045,7 +1093,7 @@ spring:
 所有请求堆积，网关先崩                →   故障被隔离在出问题的那条链路
 ```
 
-> **经验值**：`connect-timeout` 内网环境 1~3 秒足够；`response-timeout` 设为你能容忍的最长接口耗时（5~15 秒），比下游最慢接口略长即可。它与 Feign 的 `read-timeout`（§3.3）、Sentinel 的慢调用熔断（§5.4）是同一思想在不同层的体现：**任何等待都必须有上限**。
+> **经验值**：`connect-timeout` 内网环境 1~3 秒足够；`response-timeout` 设为你能容忍的最长接口耗时（5~15 秒），比下游最慢接口略长即可。它与 Feign 的 `read-timeout`（§3.3）、Resilience4j 的 TimeLimiter 超时控制（§5.5）是同一思想在不同层的体现：**任何等待都必须有上限**。
 
 ### 4.6 本节回顾
 
@@ -1061,7 +1109,7 @@ spring:
 
 ---
 
-## 5. 服务容错 — Sentinel
+## 5. 服务容错 — Resilience4j
 
 ### 5.0 问题：雪崩效应
 
@@ -1085,100 +1133,117 @@ spring:
                                   │  每次请求占用一个线程
 ```
 
-Sentinel 从三个层面防止雪崩：**流量控制**（太多请求？拦住一部分）、**熔断降级**（被调用方太慢？快速失败）、**系统保护**（系统负载过高？整体限流）。
+Resilience4j 从四个维度防止雪崩：**限流**（太多请求？拦住一部分）、**熔断**（被调用方太慢？快速失败）、**隔离舱**（一个依赖出问题？不影响其他）、**超时控制**（调用太久？主动中断）。
 
-### 5.1 Sentinel 是什么
+### 5.1 Resilience4j 是什么
 
-Sentinel 是阿里巴巴开源的流量治理组件，以流量为切入点，从流量控制、熔断降级、系统负载保护等多个维度保护服务的稳定性。
+Resilience4j 是一个轻量级的 Java 容错库，专为函数式编程设计，提供熔断器、限流器、隔离舱、重试、超时控制等模块。它是 Spring Cloud 官方推荐的 Hystrix 替代方案，以纯库形式嵌入应用，**无需额外部署任何服务**。
 
 ```
-                   ┌─────────────────┐
-                   │    Sentinel     │
-                   │    Dashboard    │
-                   │    :8090        │
-                   └────────┬────────┘
-                            │ 规则下发 + 实时监控
-            ┌───────────────┼───────────────┐
-            │               │               │
-     ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
-     │user-service │ │product-svc  │ │order-service│
-     │ Sentinel    │ │ Sentinel    │ │ Sentinel    │
-     │ 客户端嵌入   │ │ 客户端嵌入   │ │ 客户端嵌入   │
-     └─────────────┘ └─────────────┘ └─────────────┘
+Resilience4j 与 Sentinel 的架构差异：
+
+  Sentinel 模式（需额外部署）           Resilience4j 模式（纯库内嵌）
+  ──────────────────────              ──────────────────────────
+  ┌──────────────┐                    ┌──────────────────────┐
+  │  Dashboard   │ ← 独立服务          │   application.yml     │ ← 配置文件
+  │  :8090       │                    │   / Nacos Config      │   或配置中心
+  └──────┬───────┘                    └──────────┬───────────┘
+         │ 规则下发                                │ 启动时加载
+         ▼                                        ▼
+  ┌──────────────┐                    ┌──────────────────────┐
+  │ 各服务内嵌    │                    │ 各服务内嵌            │
+  │ Sentinel 客户端│                   │ Resilience4j（纯库）  │
+  └──────────────┘                    └──────────────────────┘
 ```
 
-> **前端类比**：Sentinel 的熔断降级 ≈ React 的 `<ErrorBoundary>` + `<Suspense fallback={Loading}>`。组件挂了 → 显示 fallback。服务挂了 → 返回降级数据，不阻塞调用方。
+Resilience4j 的核心模块：
 
-### 5.2 三步接入 Sentinel
+| 模块                         | 解决什么问题                     | 对应注解          |
+| ---------------------------- | -------------------------------- | ----------------- |
+| **CircuitBreaker**（熔断器） | 下游故障时快速失败，防止雪崩     | `@CircuitBreaker` |
+| **RateLimiter**（限流器）    | 限制请求速率，保护服务不被打垮   | `@RateLimiter`    |
+| **Bulkhead**（隔离舱）       | 限制并发调用数，隔离故障影响范围 | `@Bulkhead`       |
+| **Retry**（重试）            | 临时故障自动重试，提高成功率     | `@Retry`          |
+| **TimeLimiter**（超时控制）  | 限制调用超时时间，防止线程堆积   | `@TimeLimiter`    |
+
+> **前端类比**：Resilience4j 的熔断降级 ≈ React 的 `<ErrorBoundary>` + `<Suspense fallback={Loading}>`。组件挂了 → 显示 fallback。服务挂了 → 返回降级数据，不阻塞调用方。限流 ≈ 前端的 debounce/throttle。隔离舱 ≈ Web Worker 隔离计算密集型任务，不阻塞主线程。
+
+### 5.2 两步接入 Resilience4j
 
 **第一步：添加依赖**
 
 ```xml
+<!-- ① Spring Cloud 官方熔断器 Starter：引入 Resilience4j 全套模块 + Feign/Gateway 自动适配 -->
 <dependency>
-    <groupId>com.alibaba.cloud</groupId>
-    <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+</dependency>
+
+<!-- ② Resilience4j 官方 Spring Boot 3 集成：注解支持 + Actuator 健康检查 + 指标暴露 -->
+<dependency>
+    <groupId>io.github.resilience4j</groupId>
+    <artifactId>resilience4j-spring-boot3</artifactId>
 </dependency>
 ```
+
+**两个库分别做什么？**
+
+| 依赖                                               | 来源              | 核心作用                                                                                                                                                                                                                                       |
+| -------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spring-cloud-starter-circuitbreaker-resilience4j` | Spring Cloud 官方 | **桥接层**：将 Resilience4j 注册为 Spring Cloud CircuitBreaker 的实现，自动适配 OpenFeign 的 fallback 机制和 Gateway 的过滤器链。由 Spring Cloud BOM 管理版本，无需指定 `<version>`。                                                          |
+| `resilience4j-spring-boot3`                        | Resilience4j 官方 | **功能层**：提供 `@CircuitBreaker`、`@RateLimiter`、`@Bulkhead`、`@Retry`、`@TimeLimiter` 等注解的扫描与代理；自动将 yml 中的 `resilience4j.*` 配置绑定为实例；通过 Actuator 暴露熔断器状态（`/actuator/circuitbreakers`）和 Micrometer 指标。 |
+
+> 简单记：**① 让 Spring Cloud 生态认识 Resilience4j，② 让 Resilience4j 在 Spring Boot 中开箱即用。** 两个一起加才能同时使用注解 + Feign fallback + Actuator 监控。
 
 **第二步：配置**（application.yml）
 
 ```yaml
-spring:
-  cloud:
-    sentinel:
-      transport:
-        dashboard: localhost:8090 # Sentinel Dashboard 地址
-        port: 8719 # 与控制台通信的本地端口
-      eager: true # 启动时立即注册到 Dashboard
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService: # 实例名，与注解中的 name 对应
+        sliding-window-size: 10 # 滑动窗口：统计最近 10 次调用
+        failure-rate-threshold: 50 # 失败率 > 50% → 触发熔断
+        slow-call-duration-threshold: 200ms # 响应 > 200ms 算慢调用
+        slow-call-rate-threshold: 50 # 慢调用比例 > 50% → 触发熔断
+        wait-duration-in-open-state: 10s # 熔断后等待 10s 再试探
+        permitted-calls-in-half-open-state: 3 # 半开状态放行 3 个请求
+  ratelimiter:
+    instances:
+      productService:
+        limit-for-period: 10 # 每个周期允许 10 个请求
+        limit-refresh-period: 1s # 周期 = 1 秒
+        timeout-duration: 0s # 超时 0 = 超过直接拒绝
+  timelimiter:
+    instances:
+      productService:
+        timeout-duration: 2s # 调用超过 2s 自动中断
 ```
 
-**第三步：启动 Sentinel Dashboard**（Docker）
+不需要额外启动 Dashboard，不需要 Docker 容器——所有配置都在 yml 中完成。
 
-```bash
-docker run -d --name sentinel -p 8090:8080 \
-  bladex/sentinel-dashboard:1.8.9
-```
+> **与 Sentinel 的关键区别**：Sentinel 需要“添加依赖 → 配置 Dashboard 地址 → 启动 Dashboard 容器”三步；Resilience4j 只需“添加依赖 → 写配置”两步，且配置即生效，无需任何外部服务。
 
-访问 `http://localhost:8090`，默认用户名密码均为 `sentinel`。
+### 5.3 流量控制：RateLimiter 限流
 
-> **注意**：Sentinel 采用懒加载——服务第一次被调用后才会出现在 Dashboard 中。等有了第一次请求再去 Dashboard 查看。
-
-### 5.3 流量控制：QPS 限流
-
-限制某个接口每秒最多处理多少请求。超过的直接拒绝。
-
-在 Sentinel Dashboard 中配置：
-
-```
-资源名:   GET:/products/{id}
-阈值类型:  QPS
-阈值:     10
-流控效果:  快速失败
-
-含义：GET /products/{id} 每秒最多 10 个请求。第 11 个直接返回 429。
-```
-
-也可以用代码定义（无需 Dashboard）：
+限制某个接口每秒最多处理多少请求。超过的直接拒绝或等待。
 
 ```java
-import com.alibaba.csp.sentinel.annotation.SentinelResource;
-import com.alibaba.csp.sentinel.slots.block.BlockException;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 
 @RestController
 public class ProductController {
 
     @GetMapping("/products/{id}")
-    @SentinelResource(
-        value = "getProduct",
-        blockHandler = "handleBlock"   // 被限流时执行的方法
-    )
+    @RateLimiter(name = "productService", fallbackMethod = "rateLimitFallback")
     public ProductDTO getProduct(@PathVariable Long id) {
         return productService.findById(id);
     }
 
-    // blockHandler 方法：签名必须和原方法一致，多一个 BlockException 参数
-    public ProductDTO handleBlock(Long id, BlockException e) {
-        // 返回降级数据
+    // fallbackMethod：被限流时执行的方法
+    // 签名规则：与原方法参数一致 + 末尾加一个 Throwable 参数
+    public ProductDTO rateLimitFallback(Long id, Throwable t) {
+      // 创建一个Product对象，用来返回降级后的数据
         ProductDTO fallback = new ProductDTO();
         fallback.setName("系统繁忙，请稍后再试");
         return fallback;
@@ -1186,7 +1251,25 @@ public class ProductController {
 }
 ```
 
-### 5.4 熔断降级：慢调用自动熔断
+配置限流规则（application.yml）：
+
+```yaml
+resilience4j:
+  ratelimiter:
+    instances:
+      productService:
+        limit-for-period: 10 # 每个周期允许 10 个请求
+        limit-refresh-period: 1s # 刷新周期 = 1 秒（即 10 QPS）
+        timeout-duration: 0s # 等待超时 = 0（超过直接拒绝，返回 429）
+```
+
+```
+含义：GET /products/{id} 每秒最多 10 个请求。第 11 个直接走 fallback。
+```
+
+> **与 Sentinel 的对比**：Sentinel 可以在 Dashboard 中动态调整限流规则；Resilience4j 的规则在 yml 中声明，修改后需要重启或通过配置中心热更新。对于大多数场景，yml 配置 + Nacos Config 热更新已经足够。
+
+### 5.4 熔断降级：CircuitBreaker 慢调用熔断
 
 > **"熔断"是什么？** 熔断（Circuit Breaker）借鉴了电路保险丝的原理：当检测到下游服务异常（响应慢、报错多），自动**切断**对该服务的调用，后续请求直接走降级逻辑（fallback），不再等待超时。熔断不是永久的——经过一段冷却时间后，会放行少量请求"试探"下游是否恢复，成功则关闭熔断，失败则继续断开。三态转换如下：
 
@@ -1199,17 +1282,20 @@ public class ProductController {
                                                                     └─────────────────────┘
 ```
 
-当被调用方响应变慢时，Sentinel 自动进入熔断——直接走降级逻辑，不给下游压力：
+当被调用方响应变慢时，Resilience4j 自动进入熔断——直接走降级逻辑，不给下游压力：
 
-在 Sentinel Dashboard 中配置熔断规则：
+在 application.yml 中配置熔断规则：
 
-```
-资源名:         GET:/products/{id}
-熔断策略:        慢调用比例
-最大 RT:         200ms         ← 响应超过 200ms 算"慢调用"
-比例阈值:        0.5           ← 50% 的请求是慢调用就触发熔断
-熔断时长:        10s           ← 熔断 10 秒后尝试恢复
-最小请求数:      5             ← 至少 5 个请求后才开始判断
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        slow-call-duration-threshold: 200ms # 响应超过 200ms 算“慢调用”
+        slow-call-rate-threshold: 50 # 50% 的请求是慢调用就触发熔断
+        wait-duration-in-open-state: 10s # 熔断 10 秒后尝试恢复
+        minimum-number-of-calls: 5 # 至少 5 个请求后才开始判断
+        sliding-window-size: 10 # 滑动窗口：统计最近 10 次调用
 ```
 
 ```
@@ -1223,12 +1309,35 @@ public class ProductController {
   │         （不调用下游）                           如果失败 → 继续熔断
 ```
 
-代码中定义降级逻辑（与 Feign 整合时最常用）：
+代码中定义降级逻辑（与 Feign 整合时最常用，需开启 `spring.cloud.openfeign.circuitbreaker.enabled=true`）。
+
+**项目结构**（参考 §3.5 的 Feign API 独立成 jar 模式）：
+
+```
+product-api/                              ← 商品服务 API 模块（提供方维护）
+├── src/main/java/com/example/product/api/
+│   ├── ProductClient.java                ← Feign 接口
+│   ├── ProductDTO.java                   ← DTO
+│   └── fallback/
+│       └── ProductClientFallbackFactory.java  ← Fallback 工厂
+└── pom.xml                               ← 打成 jar 发布到私服
+
+order-service/                            ← 订单服务（调用方）
+├── pom.xml                               ← 依赖 product-api
+└── src/main/java/com/example/order/
+    └── service/OrderService.java         ← 注入 ProductClient 使用
+```
+
+**product-api 模块中的代码**：
 
 ```java
-import org.springframework.cloud.openfeign.FallbackFactory;
+package com.example.product.api;
 
-// Feign 接口中指定 fallback 工厂
+import com.example.product.api.fallback.ProductClientFallbackFactory;  // 不同包，必须显式引入
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.*;
+
+// ① Feign 接口：指定 fallback 工厂
 @FeignClient(
     name = "product-service",
     fallbackFactory = ProductClientFallbackFactory.class
@@ -1237,8 +1346,17 @@ public interface ProductClient {
     @GetMapping("/products/{id}")
     ProductDTO getProduct(@PathVariable("id") Long id);
 }
+```
 
-// Fallback 工厂：获取异常信息，返回降级数据
+```java
+package com.example.product.api.fallback;
+
+import com.example.product.api.ProductClient;  // 引入 Feign 接口
+import com.example.product.api.ProductDTO;      // 引入 DTO
+import org.springframework.cloud.openfeign.FallbackFactory;
+import org.springframework.stereotype.Component;
+
+// ② Fallback 工厂：获取异常信息，返回降级数据
 @Component
 public class ProductClientFallbackFactory
         implements FallbackFactory<ProductClient> {
@@ -1258,92 +1376,129 @@ public class ProductClientFallbackFactory
 }
 ```
 
-### 5.5 Sentinel 规则类型速览
+**order-service 模块中的使用**：
 
-| 规则类型         | 解决什么问题 | 关键参数                       |
-| ---------------- | ------------ | ------------------------------ |
-| **流量控制**     | 请求太多     | QPS / 并发线程数阈值           |
-| **熔断降级**     | 下游太慢     | 慢调用比例 / 异常比例 / 异常数 |
-| **热点参数限流** | 某个商品被刷 | 针对特定参数值限流             |
-| **系统规则**     | 整体负载高   | CPU / Load / RT / 入口 QPS     |
-| **授权规则**     | 黑白名单     | 来源应用 / IP                  |
+```java
+// 调用方只需依赖 product-api，直接注入使用
+@Service
+public class OrderService {
 
-### 5.6 生产实践：规则持久化到 Nacos 与网关流控
+    @Autowired
+    private ProductClient productClient;  // 来自 product-api
 
-学习阶段在 Dashboard 上点几下就能配规则，但有两个生产级问题必须解决。
-
-**问题一：Dashboard 配的规则是临时的。** 它只存在 Dashboard 内存里，服务重启或 Dashboard 重启后规则全部丢失。生产环境要求规则**持久化、可版本化管理**——正好，我们已经有 Nacos。引入 `sentinel-datasource-nacos` 后，规则以 JSON 形式存进 Nacos 配置中心：Sentinel 客户端启动时拉取，Nacos 中修改后实时推送到所有服务：
-
-```
-                ┌──────────────┐
-                │    Nacos     │
-                │ 配置中心      │
-                │              │
-                │ sentinel-flow-rules (JSON)
-                └──────┬───────┘
-                       │ ① 启动拉取 ② 修改后实时推送
-            ┌──────────┼──────────┐
-            ▼          ▼          ▼
-      user-service  product-svc  order-service
-      （Sentinel 客户端内嵌，规则来自 Nacos）
+    public OrderDTO createOrder(Long userId, Long productId, Integer quantity) {
+        // 调用商品服务，如果失败会自动走 Fallback 降级
+        ProductDTO product = productClient.getProduct(productId);
+        // ... 创建订单逻辑
+    }
+}
 ```
 
-依赖与配置：
+> **为什么这样组织？** 参考 §3.5：Feign 接口、DTO、Fallback 都放在 API 模块中，所有调用方（order-service、report-service 等）共享同一套降级逻辑，避免重复代码。提供方统一维护降级策略，调用方无需关心降级细节。
+
+### 5.5 Resilience4j 核心模块速览
+
+| 模块               | 解决什么问题       | 关键配置参数                                                                        | 对应注解          |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------------- | ----------------- |
+| **CircuitBreaker** | 下游太慢/报错多    | `failure-rate-threshold`、`slow-call-rate-threshold`、`wait-duration-in-open-state` | `@CircuitBreaker` |
+| **RateLimiter**    | 请求太多           | `limit-for-period`、`limit-refresh-period`、`timeout-duration`                      | `@RateLimiter`    |
+| **Bulkhead**       | 并发太高拖垮线程池 | `max-concurrent-calls`、`max-wait-duration`                                         | `@Bulkhead`       |
+| **Retry**          | 临时故障可恢复     | `max-attempts`、`wait-duration`、`retry-exceptions`                                 | `@Retry`          |
+| **TimeLimiter**    | 调用超时堆积线程   | `timeout-duration`、`cancel-running-future`                                         | `@TimeLimiter`    |
+
+> **为什么本文只展开 CircuitBreaker 和 RateLimiter？** 在实际项目中，Bulkhead、Retry、TimeLimiter 往往有更轻量的替代方案：
+>
+> | 模块            | 常见替代方案                                                                                           |
+> | --------------- | ------------------------------------------------------------------------------------------------------ |
+> | **Bulkhead**    | 很多团队直接用 `@Async` + 自定义线程池做隔离，或靠 Gateway 限流从源头控制并发                          |
+> | **Retry**       | 很多团队用 **Spring Retry**（`@Retryable` 注解），配置更灵活，支持退避策略                             |
+> | **TimeLimiter** | 超时通常在 HTTP Client 层（`connectTimeout` / `readTimeout`）或 Gateway 层设置，很少单独用 TimeLimiter |
+>
+> 因此本文聚焦最常用的 CircuitBreaker 和 RateLimiter。如果你的场景需要线程隔离、自动重试或精细超时，可以查阅 [Resilience4j 官方文档](https://resilience4j.readme.io/docs)。
+
+### 5.6 生产实践：指标暴露、配置中心与网关限流
+
+Resilience4j 虽然没有 Dashboard，但生产环境需要解决三个问题。
+
+**问题一：怎么监控熔断器状态？** Resilience4j 原生集成 Micrometer，所有指标自动暴露到 Actuator。需要额外添加 Prometheus 依赖：
 
 ```xml
+<!-- Actuator 端点（通常已包含在项目中） -->
 <dependency>
-    <groupId>com.alibaba.csp</groupId>
-    <artifactId>sentinel-datasource-nacos</artifactId>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+
+<!-- Prometheus 指标导出（用于对接 Grafana 监控面板） -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-registry-prometheus</artifactId>
 </dependency>
 ```
 
 ```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,circuitbreakers,ratelimiters
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name} # 指标带上服务名标签
+```
+
+通过 `/actuator/circuitbreakers` 可以看到每个熔断器的实时状态（CLOSED / OPEN / HALF_OPEN），通过 `/actuator/metrics/resilience4j.circuitbreaker.calls` 可以看到调用成功/失败/被拒绝的次数。
+
+> **关于 Grafana 面板**：与 Sentinel Dashboard（规则管理 + 监控，必须部署）不同，Grafana 是**可选的纯监控面板**——不部署也不影响 Resilience4j 的任何功能。Prometheus 采集 Actuator 暴露的 `/actuator/prometheus` 端点数据，Grafana 从 Prometheus 查询并展示，形成 `Resilience4j → Micrometer → Prometheus → Grafana` 的监控链路。
+
+**问题二：配置怎么集中管理？** Resilience4j 的配置写在 application.yml 中，天然支持 Nacos Config 热更新。在 Nacos 中创建 `order-service.yaml` 配置文件，将 `resilience4j` 配置块放进去即可：
+
+```yaml
+# Nacos 中的 order-service.yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 200ms
+        wait-duration-in-open-state: 10s
+```
+
+Nacos 中修改后，通过 `@RefreshScope` 或 Spring Cloud Context 的刷新机制即可热更新，无需重启服务。
+
+> **与 Sentinel 的对比**：Sentinel 需要额外的 `sentinel-datasource-nacos` 依赖和专用的 JSON 规则格式；Resilience4j 直接用标准的 yml 配置，与 Spring Boot 配置体系完全一致，学习成本更低。
+
+**问题三：入口流量在网关层就要拦住。** 前面讲的限流熔断都嵌在业务服务里，但秒杀、爬虫等流量冲击的是网关本身。Spring Cloud Gateway 内置了 `RequestRateLimiter` 过滤器，基于 Redis 令牌桶算法实现网关级限流：
+
+```yaml
 spring:
   cloud:
-    sentinel:
-      datasource:
-        flow: # 规则类型标识（流控规则）
-          nacos:
-            server-addr: localhost:8848
-            dataId: order-service-flow-rules # 存规则的 dataId
-            groupId: SENTINEL_GROUP
-            rule-type: flow # flow / degrade / param-flow / system / authority
-```
-
-Nacos 中 `order-service-flow-rules` 的内容就是规则 JSON：
-
-```json
-[
-  {
-    "resource": "GET:/products/{id}",
-    "limitApp": "default",
-    "grade": 1,
-    "count": 10,
-    "strategy": 0,
-    "controlBehavior": 0,
-    "clusterMode": false
-  }
-]
-```
-
-> **分工建议**：Nacos 持久化负责"规则不丢 + 集中管理"，Dashboard 负责"实时监控 + 临时调参"。注意 Dashboard 上修改规则**不会回写 Nacos**，生产环境应以 Nacos 中的规则为准。
-
-**问题二：入口流量在网关层就要拦住。** 前面讲的限流熔断都嵌在业务服务里，但秒杀、爬虫等流量冲击的是网关本身。Sentinel 提供网关专用适配器，直接在 Gateway 上配置流控规则（按路由 ID 或自定义 API 分组）：
-
-```xml
-<!-- Gateway 模块中使用 -->
-<dependency>
-    <groupId>com.alibaba.csp</groupId>
-    <artifactId>sentinel-spring-cloud-gateway-adapter</artifactId>
-</dependency>
+    gateway:
+      routes:
+        - id: order-service-route
+          uri: lb://order-service
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10 # 每秒补充 10 个令牌
+                redis-rate-limiter.burstCapacity: 20 # 令牌桶容量 20
+                key-resolver: "#{@userKeyResolver}" # 按用户 IP 限流
 ```
 
 ```
 分层防御全景：
-                                                         资源名示例
-第一层：网关限流（入口 QPS）        Gateway ────────────  order-service-route
-第二层：服务内接口限流             product-service ────  GET:/products/{id}
-第三层：下游调用熔断               order-service ──────  ProductClient#getProduct
+                                                         防护手段
+第一层：网关限流（入口 QPS）        Gateway ────────────  RequestRateLimiter（Redis 令牌桶）
+第二层：服务内接口限流             product-service ────  @RateLimiter（Resilience4j）
+第三层：下游调用熔断               order-service ──────  @CircuitBreaker（Resilience4j）
 
 流量从外到内逐层收缩，每层都有独立的保护规则
 ```
@@ -1351,17 +1506,19 @@ Nacos 中 `order-service-flow-rules` 的内容就是规则 JSON：
 ### 5.7 本节回顾
 
 ```
-没有 Sentinel                    有了 Sentinel
-─────────────                    ─────────────
+没有 Resilience4j                有了 Resilience4j
+──────────────                   ──────────────
 一个服务慢，拖垮全部        →    熔断：快速失败，不等待
 流量突增打挂服务            →    限流：多余的请求直接拒绝
-不知道哪个服务出了问题       →    Dashboard 实时监控 QPS / RT
+线程池被一个依赖占满         →    隔离舱：限制并发，隔离故障
+临时网络抖动导致失败         →    重试：自动重试，提高成功率
+调用超时线程堆积             →    超时控制：主动中断，释放线程
 服务挂了返回 500             →    降级：返回兜底数据，体验不中断
-重启后规则全丢               →    规则持久化到 Nacos（§5.6）
-入口流量无防护               →    网关适配器在边界限流（§5.6）
+不知道熔断器状态             →    Actuator + Micrometer 指标暴露（§5.6）
+入口流量无防护               →    Gateway RequestRateLimiter（§5.6）
 ```
 
-> **接下来**：Sentinel 防止了级联故障。但请求跨了 5 个服务，到底慢在哪一层？§6 引入链路追踪回答这个问题。
+> **接下来**：Resilience4j 防止了级联故障。但请求跨了 5 个服务，到底慢在哪一层？§6 引入链路追踪回答这个问题。
 
 ---
 
@@ -1738,43 +1895,70 @@ public class FeignConfig {
 
 ### 7.4 下游服务的 SecurityContext 适配
 
-网关验证了 JWT，但下游服务怎么让 Spring Security 认识这个用户？答案是写一个 Filter 从 `X-User-Id` 构建 `SecurityContext`。
+**问题：网关已经验证了 JWT，下游服务为什么还需要 Spring Security？**
 
-**信任链：网关验证 + 下游信任 = 完整闭环**
-
-下游之所以能"跳过验证"，是因为网关在 §7.1 的 `AuthFilter` 中已经完成了全部验证工作。两端代码的协作关系：
+因为两层的职责不同：
 
 ```
-§7.1 网关 AuthFilter                     §7.4 下游 GatewayAuthFilter
-────────────────────                    ───────────────────────────
-① Jwts.parser().verifyWith(KEY)         ① request.getHeader("X-User-Id")
-       .parseSignedClaims(token)            ← 读网关注入的 Header
-   → 验签名：token 未被篡改 ✓
-   → 验有效期：token 未过期 ✓
-
-② String userId = claims.getSubject()   ② new UsernamePasswordAuthenticationToken(
-   → 从 JWT Claims 提取身份                     userId, null, authorities)
-
-③ exchange.mutate()                     ③ SecurityContextHolder.setAuthentication(auth)
-   .request(r - r.header(                    → 后续 @PreAuthorize 正常工作
-       "X-User-Id", userId))            ← 不再验证：能到达这里的 X-User-Id
-   → 注入 Header                             必定是网关 ①+②+③ 写入的
+┌─────────────────────────────────────────────────────────────────┐
+│                    两层 Security 的不同职责                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  网关层                                   下游服务层             │
+│  ──────                                   ──────────             │
+│  ● 验证 JWT 签名                         ● 不验证 JWT            │
+│  ● 解析 Token 内容                       ● 从 Header 读取用户信息│
+│  ● 拒绝无效请求                          ● 构建 SecurityContext  │
+│  ● 回答：“能不能进来”                    ● 回答：“能做什么”      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-存入 `SecurityContextHolder` 后，Spring Security 的整个框架就"看见"这个用户了：
+下游服务需要 SecurityContext 的三个理由：
+
+| 理由               | 示例                                                               |
+| ------------------ | ------------------------------------------------------------------ |
+| **方法级权限控制** | `@PreAuthorize("hasRole('ADMIN')")` 需要 SecurityContext 才能判断  |
+| **获取当前用户**   | `SecurityContextHolder.getContext().getAuthentication().getName()` |
+| **审计日志**       | 记录“用户 X 执行了 Y 操作”                                         |
+
+**解决方案：写一个 Filter 从网关注入的 Header 构建 SecurityContext**
 
 ```
-SecurityContextHolder（ThreadLocal，每个请求线程独立一份）
-        │
-        └── SecurityContext
-                │
-                └── Authentication = auth  ← setAuthentication() 塞进去
-                        │
-                        ├── auth.getPrincipal()      → "123"         ← @PreAuthorize 从这里取
-                        ├── auth.getAuthorities()    → [ROLE_USER]   ← hasRole("USER") 从这里取
-                        └── auth.isAuthenticated()   → true          ← 是否放行
+完整认证流程：
+═══════════════════════════════════════════════════════════════
 
+客户端
+  │
+  │  Authorization: Bearer eyJhbGci...
+  ▼
+┌─────────────────────────────────────────────────────────────┐
+│  网关 AuthFilter（§7.1）                                    │
+│  ─────────────────────────                                  │
+│  ① 验证 JWT 签名                                            │
+│  ② 解析出 userId=123, role=ADMIN                            │
+│  ③ 转发请求，注入 Header：                                   │
+│     X-User-Id: 123                                          │
+│     X-User-Role: ADMIN                                      │
+└─────────────────────────────────────────────────────────────┘
+  │
+  │  X-User-Id: 123
+  │  X-User-Role: ADMIN
+  ▼
+┌─────────────────────────────────────────────────────────────┐
+│  下游服务 GatewayAuthFilter（本节）                          │
+│  ──────────────────────────────                             │
+│  ① 读取 X-User-Id、X-User-Role                             │
+│  ② 构建 Authentication 对象                                  │
+│  ③ 存入 SecurityContextHolder                               │
+│  ④ 业务代码可以：                                            │
+│     - 用 @PreAuthorize 控制权限                              │
+│     - 用 SecurityContextHolder 获取当前用户                  │
+│     - 记录审计日志                                           │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**代码实现**
 
 ```java
 import jakarta.servlet.FilterChain;
@@ -1789,6 +1973,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
+/**
+ * 下游服务信任网关认证结果的 Filter。
+ * 网关注入 X-User-Id / X-User-Role，本 Filter 读取并构建 SecurityContext。
+ */
 public class GatewayAuthFilter extends OncePerRequestFilter {
 
     @Override
@@ -1797,11 +1985,17 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String userId = request.getHeader("X-User-Id");
+        String userRole = request.getHeader("X-User-Role");
+
         if (userId != null) {
-            // 信任网关已认证 → 直接构建带 userId 的已认证 token
+            // 信任网关已认证 → 直接构建已认证的 Authentication
+            List<SimpleGrantedAuthority> authorities = userRole != null
+                    ? List.of(new SimpleGrantedAuthority("ROLE_" + userRole))
+                    : List.of(new SimpleGrantedAuthority("ROLE_USER"));
+
             UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(
-                        userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+                    new UsernamePasswordAuthenticationToken(userId, null, authorities);
+
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
 
@@ -1810,16 +2004,38 @@ public class GatewayAuthFilter extends OncePerRequestFilter {
 }
 ```
 
-注册到 SecurityFilterChain 中（参考 `spring-security-guide.md` §2.1）：
+注册到 SecurityFilterChain 中：
 
 ```java
 http.addFilterBefore(
     new GatewayAuthFilter(), UsernamePasswordAuthenticationFilter.class);
 ```
 
-这样下游 Controller 中 `@PreAuthorize`、`SecurityContextHolder.getContext().getAuthentication()` 都能正常工作。
+**存入 SecurityContext 后，下游业务代码可以这样用：**
 
-> **那 `UserDetailsService` 去哪了？** 对比两种模式的认证流程：
+```java
+// ① 方法级权限控制
+@PreAuthorize("hasRole('ADMIN')")
+@PostMapping("/products")
+public Product createProduct(@RequestBody ProductDTO dto) { ... }
+
+// ② 获取当前用户 ID
+@PostMapping("/orders")
+public Order createOrder(@RequestBody OrderRequest req) {
+    String userId = SecurityContextHolder.getContext()
+                                         .getAuthentication()
+                                         .getName();  // 返回 "123"
+    req.setUserId(userId);
+    return orderService.create(req);
+}
+
+// ③ 数据级权限控制
+@PreAuthorize("#userId == authentication.name")
+@DeleteMapping("/orders/{id}")
+public void deleteOrder(@PathVariable String userId, @PathVariable Long id) { ... }
+```
+
+> **那 `UserDetailsService` 去哪了？** 对比两种模式：
 >
 > ```
 > ┌── 标准认证流程（如登录接口）──────────────────────────────────┐
@@ -2442,6 +2658,8 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
 
 > **接下来**：至此，同步调用、异步消息、可观测性、容错、安全全部就位。§10 把这些技术决策汇总成实战清单。
 
+> **深度进阶**：本节的「三步接入」足以跑通场景；分区与顺序、acks/ISR 可靠性、offset 提交与死信的完整推导见 [Kafka 与 Spring Boot 渐进式指南](./kafka-spring-boot-guide.md)。
+
 ---
 
 ## 10. 实战决策
@@ -2479,7 +2697,7 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
   □ 最后拆核心模块（最了解业务后再动）
 
 第四步：加防御与异步化
-  □ 所有 Feign 调用加 Sentinel fallback，规则持久化到 Nacos
+  □ 所有 Feign 调用加 Resilience4j fallback，配置通过 Nacos Config 集中管理
   □ "做了就行不用等"的调用改为 RabbitMQ 异步消息
   □ 日志、行为埋点接入 Kafka 数据管道
   □ 完善监控和告警
@@ -2498,7 +2716,7 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
     │
     ├── 配置管理 → Nacos Config（与注册中心同一套）/ Apollo（携程）
     │
-    ├── 服务容错 → Sentinel（推荐）/ Resilience4j（国际站常用）
+    ├── 服务容错 → Resilience4j（推荐，Spring Cloud 官方标准）/ Sentinel（阿里系，需 Dashboard）
     │
     ├── 链路追踪 → SkyWalking（推荐：agent 零侵入 + 拓扑 + JVM 指标）
     │              / Micrometer Tracing + Zipkin（轻量，SDK 式）
@@ -2578,15 +2796,14 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
     <artifactId>spring-cloud-starter-loadbalancer</artifactId>
 </dependency>
 
-<!-- Sentinel 服务容错 -->
+<!-- Resilience4j 服务容错（§5） -->
 <dependency>
-    <groupId>com.alibaba.cloud</groupId>
-    <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
 </dependency>
-<!-- Sentinel 规则持久化到 Nacos（生产实践，§5.6） -->
 <dependency>
-    <groupId>com.alibaba.csp</groupId>
-    <artifactId>sentinel-datasource-nacos</artifactId>
+    <groupId>io.github.resilience4j</groupId>
+    <artifactId>resilience4j-spring-boot3</artifactId>
 </dependency>
 
 <!-- SkyWalking 日志关联：logback 打印 %tid（§6.5）；agent 本体不在 pom 中 -->
@@ -2617,11 +2834,7 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
     <groupId>org.springframework.cloud</groupId>
     <artifactId>spring-cloud-starter-loadbalancer</artifactId>
 </dependency>
-<!-- Gateway 层限流：Sentinel 网关适配器（§5.6） -->
-<dependency>
-    <groupId>com.alibaba.csp</groupId>
-    <artifactId>sentinel-spring-cloud-gateway-adapter</artifactId>
-</dependency>
+<!-- Gateway 层限流：使用内置 RequestRateLimiter + Redis（§5.6），无需额外依赖 -->
 ```
 
 ### 11.2 注解速查
@@ -2632,7 +2845,11 @@ RabbitMQ 段：到用户这最后一步，一条都不能丢
 | `@EnableFeignClients`             | 启动类                  | 扫描 Feign 接口                                 | §3.2  |
 | `@FeignClient(name="xxx")`        | 接口                    | 声明远程服务调用                                | §3.2  |
 | `@LoadBalanced`                   | RestClient.Builder Bean | RestClient 场景中服务名 → IP 解析；本项目未使用 | §3.1  |
-| `@SentinelResource`               | Controller 方法         | 声明限流/降级                                   | §5.3  |
+| `@CircuitBreaker`                 | Service/Controller 方法 | 熔断降级                                        | §5.4  |
+| `@RateLimiter`                    | Controller 方法         | 限流                                            | §5.3  |
+| `@Bulkhead`                       | Service 方法            | 隔离舱（限制并发）                              | §5.5  |
+| `@Retry`                          | Service 方法            | 自动重试                                        | §5.5  |
+| `@TimeLimiter`                    | Service 方法            | 超时控制                                        | §5.5  |
 | `@RabbitListener(queues="xxx")`   | 组件方法                | 监听 RabbitMQ 队列                              | §8.4  |
 | `@KafkaListener(topics="xxx")`    | 组件方法                | 监听 Kafka Topic                                | §9.4  |
 | `@GlobalTransactional`            | Service 方法            | 分布式事务（延伸阅读）                          | §12.1 |
@@ -2666,21 +2883,27 @@ spring:
         server-addr: localhost:8848
         file-extension: yaml
 
-# ========== Sentinel ==========
-spring:
-  cloud:
-    sentinel:
-      transport:
-        dashboard: localhost:8090
-        port: 8719
-      eager: true
-      datasource:                   # 规则持久化到 Nacos（§5.6）
-        flow:
-          nacos:
-            server-addr: localhost:8848
-            dataId: my-service-flow-rules
-            groupId: SENTINEL_GROUP
-            rule-type: flow
+# ========== Resilience4j（§5） ==========
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 200ms
+        slow-call-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-calls-in-half-open-state: 3
+  ratelimiter:
+    instances:
+      productService:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+        timeout-duration: 0s
+  timelimiter:
+    instances:
+      productService:
+        timeout-duration: 2s
 
 # ========== Gateway（含生产超时，§4.5） ==========
 spring:
@@ -2747,7 +2970,7 @@ services:
   mysql-user: # 用户数据库 → :3307（主 compose，§1.4）
   mysql-product: # 商品数据库 → :3308（主 compose，§1.4）
   mysql-order: # 订单数据库 → :3309（主 compose，§1.4）
-  sentinel: # 流量控制台 → :8090（§5.2，docker run 单容器即可）
+  # Resilience4j 为纯库，无需容器（§5）
   skywalking-oap: # 链路数据接收/分析 → :11800/:12800（§6.3）
   skywalking-ui: # 链路追踪 UI → :8088（§6.3）
   rabbitmq: # 业务消息 → :5672，管理台 → :15672（§8.2）
@@ -2763,7 +2986,6 @@ product-service :8082     ← MySQL product_db :3308
 order-service   :8083     ← MySQL order_db :3309
 Nacos           :8848     ← 注册中心 + 配置中心
 Nacos Console   :8084     ← 宿主机端口，映射到容器内 :8080；避免占用 Gateway :8080
-Sentinel        :8090     ← 流量控制台
 SkyWalking OAP  :11800    ← agent 上报（gRPC）；:12800 查询 API
 SkyWalking UI   :8088     ← 宿主机端口，映射到容器内 :8080
 RabbitMQ        :5672     ← AMQP；:15672 管理控制台
@@ -2789,13 +3011,13 @@ order-service (:8083)
   ├──[Feign]→ product-service (:8082)
   │   │ GET /products/42 → 查询商品信息
   │   │ PUT /products/42/stock → 扣减库存
-  │   │ [Sentinel 熔断保护]
+  │   │ [Resilience4j 熔断保护]
   │   │ [SkyWalking agent 自动传播 Trace]
   │
   ├──[Feign]→ user-service (:8081)
   │   │ GET /users/1 → 查询用户信息
   │   │ PUT /users/1/balance → 扣减余额
-  │   │ [Sentinel 熔断保护]
+  │   │ [Resilience4j 熔断保护]
   │   │ [SkyWalking agent 自动传播 Trace]
   │
   │ INSERT INTO orders → 创建订单
@@ -2809,7 +3031,7 @@ order-service (:8083)
 返回统一响应 {code, message, data}
 
 在 SkyWalking UI (:8088) 中可以查看完整 Trace 与服务拓扑
-在 Sentinel (:8090) 中可以看到 QPS/RT 实时数据
+在 Actuator (/actuator/circuitbreakers) 中可以看到熔断器实时状态
 在 Nacos (:8848) 中可以看到所有服务在线状态与配置
 在 RabbitMQ 管理台 (:15672) 中可以看到队列深度与消费速率
 ```
@@ -2822,7 +3044,7 @@ order-service (:8083)
 
 ### 12.1 分布式事务 — Seata AT 模式
 
-> **定位说明**：分布式事务是微服务的经典难题，但它不是每个团队的必需品——很多公司优先用消息驱动的最终一致性（§8/§9）解决问题。本节压缩介绍 Seata AT 模式的核心思想，了解即可。
+> **定位说明**：分布式事务是微服务的经典难题，但它不是每个团队的必需品——很多公司优先用消息驱动的最终一致性（§8 RabbitMQ / §9 Kafka）解决问题。本节压缩介绍 Seata AT 模式的核心思想，了解即可。
 
 **问题：@Transactional 失效了**
 
@@ -2924,7 +3146,7 @@ public Consumer<OrderCreatedEvent> orderCreated() {
 >
 > 1. **快速体验**（1 小时）：启动 Docker Compose → 创建 user/product/order 三个空服务 → 配好 Nacos 注册发现 → 写一个 Feign 调用 → 浏览器访问通过 Gateway 路由。
 > 2. **系统学习**（1 天）：按本指南 §1 → §7 顺序阅读。每读完一章，在项目里实践对应的功能。
-> 3. **进阶深入**（1 周）：接入 Sentinel 规则并持久化到 Nacos、挂载 SkyWalking agent 打通链路追踪、用 RabbitMQ 改造一个"下单发通知"场景、用 Kafka 收一条行为日志。给每个 Feign 调用加 fallback。
+> 3. **进阶深入**（1 周）：配置 Resilience4j 熔断限流规则并通过 Nacos Config 集中管理、挂载 SkyWalking agent 打通链路追踪、用 RabbitMQ 改造一个“下单发通知”场景、用 Kafka 收一条行为日志。给每个 Feign 调用加 fallback。
 > 4. **生产准备**（持续）：安全加固（JWT 密钥管理）、MQ 可靠性演练（kill 消费者看消息是否重回队列）、监控告警、CI/CD 流水线、容器化部署。
 >
 > **关联阅读**：

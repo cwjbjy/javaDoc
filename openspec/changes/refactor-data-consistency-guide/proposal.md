@@ -13,9 +13,11 @@
 ## Capabilities
 
 ### New Capabilities
+
 - `data-consistency-mongodb-guide`: MongoDB 场景下的数据一致性实现指南，包含 `$set`/`$inc` 局部更新、事务配置、唯一索引、副本集要求等 MongoDB 特定内容
 
 ### Modified Capabilities
+
 <!-- 无需修改现有 spec 的需求。data-consistency-guide 当前没有对应的 spec。 -->
 
 ## Impact

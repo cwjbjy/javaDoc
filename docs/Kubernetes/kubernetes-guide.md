@@ -183,20 +183,20 @@ Compose 单机部署的短板
 
 这是本指南最重要的表。微服务指南里的 `docker-compose.yml` 每一段，在 k8s 里都有对应物：
 
-| Compose 写法 | k8s 对应物 | 说明 |
-|---|---|---|
-| `services: order-service:` | Deployment（+ Service） | 一个服务 = 一个 Deployment 管副本 + 一个 Service 管访问 |
-| `container_name:` | Pod 名 | 由 Deployment 自动生成 |
-| `image:` | `spec.template.spec.containers[].image` | 概念一致 |
-| `environment:` | ConfigMap / Secret | 配置外置，进容器的方式是 env 或文件挂载 |
-| `ports: "8083:8083"` | Service / Ingress | k8s 端口分容器端口、Service 端口、对外入口三层 |
-| `volumes:`（命名卷） | PV / PVC | 申请存储 → 绑定存储，解耦"谁要"和"哪来" |
-| `depends_on:` + healthcheck | initContainer + 探针 | 启动顺序在 k8s 用不同机制表达（§7.2、§9.1） |
-| `healthcheck:` | liveness/readinessProbe | 检查方式从"命令"升级为"探测类型"（§9.1） |
-| `restart: always` | 内建自愈 | Deployment 天然保证副本数，无需声明 |
-| `docker compose scale` | `spec.replicas` / HPA | 手动是 replicas，自动是 HPA（§12.2） |
-| `docker compose up` | `kubectl apply -f` | 都是"让集群达到文件声明的状态" |
-| 网络：服务名互 ping | k8s DNS | 服务名即域名，机制不同、体验一致（§4.2） |
+| Compose 写法                | k8s 对应物                              | 说明                                                    |
+| --------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| `services: order-service:`  | Deployment（+ Service）                 | 一个服务 = 一个 Deployment 管副本 + 一个 Service 管访问 |
+| `container_name:`           | Pod 名                                  | 由 Deployment 自动生成                                  |
+| `image:`                    | `spec.template.spec.containers[].image` | 概念一致                                                |
+| `environment:`              | ConfigMap / Secret                      | 配置外置，进容器的方式是 env 或文件挂载                 |
+| `ports: "8083:8083"`        | Service / Ingress                       | k8s 端口分容器端口、Service 端口、对外入口三层          |
+| `volumes:`（命名卷）        | PV / PVC                                | 申请存储 → 绑定存储，解耦"谁要"和"哪来"                 |
+| `depends_on:` + healthcheck | initContainer + 探针                    | 启动顺序在 k8s 用不同机制表达（§7.2、§9.1）             |
+| `healthcheck:`              | liveness/readinessProbe                 | 检查方式从"命令"升级为"探测类型"（§9.1）                |
+| `restart: always`           | 内建自愈                                | Deployment 天然保证副本数，无需声明                     |
+| `docker compose scale`      | `spec.replicas` / HPA                   | 手动是 replicas，自动是 HPA（§12.2）                    |
+| `docker compose up`         | `kubectl apply -f`                      | 都是"让集群达到文件声明的状态"                          |
+| 网络：服务名互 ping         | k8s DNS                                 | 服务名即域名，机制不同、体验一致（§4.2）                |
 
 > **关键区别**：Compose 的配置是"**过程**"（先启动谁、再启动谁）；k8s 的清单是"**期望状态**"（我要 3 个副本、要能访问、要存储）。至于怎么达到，是 k8s 的事。这个心智转换是第 3 章的主题。
 
@@ -353,14 +353,14 @@ k8s 一切皆 YAML。先写最小的完整 Pod，认识清单的五个基本字�
 
 ```yaml
 # pod-nginx.yaml —— 最小的完整 Pod 清单
-apiVersion: v1          # ① API 版本：v1 是核心资源组
-kind: Pod               # ② 资源类型：我要创建什么
-metadata:               # ③ 元数据：名字 + 标签
-  name: nginx-demo      #    名字在命名空间内唯一
-  labels:               #    标签：k8s 的"贴纸"，后面 Service 靠它找人
+apiVersion: v1 # ① API 版本：v1 是核心资源组
+kind: Pod # ② 资源类型：我要创建什么
+metadata: # ③ 元数据：名字 + 标签
+  name: nginx-demo #    名字在命名空间内唯一
+  labels: #    标签：k8s 的"贴纸"，后面 Service 靠它找人
     app: nginx-demo
-spec:                   # ④ 规格：期望状态（对比 §1.3 的"期望状态"心智）
-  containers:           # ⑤ 容器列表
+spec: # ④ 规格：期望状态（对比 §1.3 的"期望状态"心智）
+  containers: # ⑤ 容器列表
     - name: nginx
       image: nginx:1.27 #    Compose 里的 image:
       ports:
@@ -472,21 +472,21 @@ k8s 内部有一个**调谐循环（Reconcile Loop）**：控制器不断比对"
 
 ```yaml
 # deploy-user-service.yaml —— 用电商 user-service 镜像演示（假设已构建，§7 会讲镜像）
-apiVersion: apps/v1           # Deployment 属于 apps 组
+apiVersion: apps/v1 # Deployment 属于 apps 组
 kind: Deployment
 metadata:
   name: user-service
   labels:
     app: user-service
 spec:
-  replicas: 2                 # 期望副本数（Compose: docker compose scale）
-  selector:                   # 管辖范围：管理带哪些标签的 Pod
+  replicas: 2 # 期望副本数（Compose: docker compose scale）
+  selector: # 管辖范围：管理带哪些标签的 Pod
     matchLabels:
       app: user-service
-  template:                   # Pod 模板：新 Pod 照此创建（就是 §2 的 Pod spec）
+  template: # Pod 模板：新 Pod 照此创建（就是 §2 的 Pod spec）
     metadata:
       labels:
-        app: user-service     # 必须被 selector 匹配，否则 Deployment 不认
+        app: user-service # 必须被 selector 匹配，否则 Deployment 不认
     spec:
       containers:
         - name: user-service
@@ -554,10 +554,10 @@ spec:
         - name: user-service
           image: demo/user-service:1.0.0
           resources:
-            requests:        # 调度承诺：申请多少才安排到节点（保证能跑）
-              cpu: "250m"     # 0.25 核
+            requests: # 调度承诺：申请多少才安排到节点（保证能跑）
+              cpu: "250m" # 0.25 核
               memory: "512Mi"
-            limits:           # 使用上限：超了怎么办（CPU 限流，内存 OOM 杀掉重启）
+            limits: # 使用上限：超了怎么办（CPU 限流，内存 OOM 杀掉重启）
               cpu: "1000m"
               memory: "1Gi"
 ```
@@ -613,11 +613,11 @@ kubectl get pods -o wide        # 新 Pod 的 IP 变成了 10.244.0.19
 
 ### 4.1 Service 的三种类型
 
-| 类型 | 作用 | 访问范围 | 对照 Compose |
-|---|---|---|---|
-| ClusterIP（默认） | 集群内部虚拟 IP | 仅集群内 | 服务名互访（默认网络） |
-| NodePort | 在每台节点开一个端口转发进来 | 节点 IP:端口 | `ports: "30080:80"` 映射 |
-| LoadBalancer | 对接云厂商 LB | 公网 | 云托管环境才有对应物 |
+| 类型              | 作用                         | 访问范围     | 对照 Compose             |
+| ----------------- | ---------------------------- | ------------ | ------------------------ |
+| ClusterIP（默认） | 集群内部虚拟 IP              | 仅集群内     | 服务名互访（默认网络）   |
+| NodePort          | 在每台节点开一个端口转发进来 | 节点 IP:端口 | `ports: "30080:80"` 映射 |
+| LoadBalancer      | 对接云厂商 LB                | 公网         | 云托管环境才有对应物     |
 
 ```
 ClusterIP        NodePort                 LoadBalancer
@@ -657,14 +657,14 @@ k8s：       order-service 调 http://product-service:8082   （同命名空间�
 apiVersion: v1
 kind: Service
 metadata:
-  name: user-service          # 这个名字将成为 DNS 名
+  name: user-service # 这个名字将成为 DNS 名
 spec:
-  type: ClusterIP             # 默认值，可省略
+  type: ClusterIP # 默认值，可省略
   selector:
-    app: user-service         # 找带此标签的 Pod（与 Deployment 的 selector 呼应）
+    app: user-service # 找带此标签的 Pod（与 Deployment 的 selector 呼应）
   ports:
-    - port: 8081              # Service 自己的端口（调用方连这个）
-      targetPort: 8081        # 转发到 Pod 的容器端口（containerPort）
+    - port: 8081 # Service 自己的端口（调用方连这个）
+      targetPort: 8081 # 转发到 Pod 的容器端口（containerPort）
 ```
 
 ```bash
@@ -713,11 +713,11 @@ metadata:
   name: ecommerce
 spec:
   rules:
-    - host: demo.local                      # 域名路由
+    - host: demo.local # 域名路由
       http:
         paths:
-          - path: /api/users                # 路径路由
-            pathType: Prefix                 # 前缀匹配（1.36 必填）
+          - path: /api/users # 路径路由
+            pathType: Prefix # 前缀匹配（1.36 必填）
             backend:
               service:
                 name: user-service
@@ -751,7 +751,7 @@ spec:
   ports:
     - port: 8083
       targetPort: 8083
-      nodePort: 30083        # 30000~32767 范围，每台节点都监听
+      nodePort: 30083 # 30000~32767 范围，每台节点都监听
 ```
 
 ```bash
@@ -806,9 +806,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: user-service-config
-data:                        # data 段放名值对
-  db-host: "mysql-user"      # k8s 内 DNS 名（§4.2）——不再是 localhost！
-  db-port: "3306"            # 集群内直接连容器端口，无需宿主端口 3307
+data: # data 段放名值对
+  db-host: "mysql-user" # k8s 内 DNS 名（§4.2）——不再是 localhost！
+  db-port: "3306" # 集群内直接连容器端口，无需宿主端口 3307
   db-name: "user_db"
 ```
 
@@ -829,9 +829,9 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: mysql-secret
-type: Opaque                  # 通用键值类型
-stringData:                   # stringData：明文书写，k8s 自动转 base64
-  mysql-root-password: "root123"   # 生产环境请换成真密码，且不要提交 git
+type: Opaque # 通用键值类型
+stringData: # stringData：明文书写，k8s 自动转 base64
+  mysql-root-password: "root123" # 生产环境请换成真密码，且不要提交 git
 ```
 
 ```bash
@@ -853,14 +853,14 @@ spec:
         - name: user-service
           image: demo/user-service:1.0.0
           env:
-            - name: DB_HOST              # 容器内环境变量名
+            - name: DB_HOST # 容器内环境变量名
               valueFrom:
-                configMapKeyRef:         # 从 ConfigMap 取
+                configMapKeyRef: # 从 ConfigMap 取
                   name: user-service-config
                   key: db-host
             - name: DB_PASSWORD
               valueFrom:
-                secretKeyRef:            # 从 Secret 取
+                secretKeyRef: # 从 Secret 取
                   name: mysql-secret
                   key: mysql-root-password
 ```
@@ -876,12 +876,12 @@ spec:
           image: demo/user-service:1.0.0
           volumeMounts:
             - name: app-config
-              mountPath: /etc/config     # 挂载点
+              mountPath: /etc/config # 挂载点
               readOnly: true
       volumes:
         - name: app-config
           configMap:
-            name: user-service-config    # 每个 key 变成一个文件
+            name: user-service-config # 每个 key 变成一个文件
 ```
 
 ```
@@ -925,11 +925,11 @@ Pod 是"牛"（§2.4）：MySQL 的 Pod 一旦重建，容器文件系统是全�
 ```yaml
 # Compose 写法
 volumes:
-  mysql-user-data:            # 声明一个命名卷
+  mysql-user-data: # 声明一个命名卷
 services:
   mysql-user:
     volumes:
-      - mysql-user-data:/var/lib/mysql   # 挂到数据目录
+      - mysql-user-data:/var/lib/mysql # 挂到数据目录
 ```
 
 k8s 的对应物就是 PV（PersistentVolume，持久卷）与 PVC（PersistentVolumeClaim，持久卷声明）——但比 Compose 多了一层"解耦"，这是理解本章的钥匙。
@@ -988,10 +988,10 @@ metadata:
   name: mysql-user-pvc
 spec:
   accessModes:
-    - ReadWriteOnce          # 单节点读写（单副本 MySQL 的标准姿势）
+    - ReadWriteOnce # 单节点读写（单副本 MySQL 的标准姿势）
   resources:
     requests:
-      storage: 1Gi           # 学习够用；生产按数据量规划
+      storage: 1Gi # 学习够用；生产按数据量规划
   # 不指定 storageClassName → 用默认 standard（§6.2）
 ```
 
@@ -1002,7 +1002,7 @@ kind: Deployment
 metadata:
   name: mysql-user
 spec:
-  replicas: 1                # 单副本：MySQL 不能像无状态服务那样随便多开
+  replicas: 1 # 单副本：MySQL 不能像无状态服务那样随便多开
   selector:
     matchLabels:
       app: mysql-user
@@ -1013,8 +1013,8 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: mysql:8.0    # 镜像与微服务指南一致
-          env:                # 环境变量从 §5 的对象注入
+          image: mysql:8.0 # 镜像与微服务指南一致
+          env: # 环境变量从 §5 的对象注入
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -1023,19 +1023,19 @@ spec:
             - name: MYSQL_DATABASE
               value: "user_db"
           ports:
-            - containerPort: 3306     # 集群内统一 3306，不再需要 3307！
+            - containerPort: 3306 # 集群内统一 3306，不再需要 3307！
           volumeMounts:
             - name: mysql-data
-              mountPath: /var/lib/mysql   # 挂到 MySQL 数据目录（Compose 同名路径）
+              mountPath: /var/lib/mysql # 挂到 MySQL 数据目录（Compose 同名路径）
       volumes:
         - name: mysql-data
           persistentVolumeClaim:
-            claimName: mysql-user-pvc     # Pod 只认 PVC（§6.1 的心智）
+            claimName: mysql-user-pvc # Pod 只认 PVC（§6.1 的心智）
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mysql-user                 # 其他服务用这个 DNS 名连接
+  name: mysql-user # 其他服务用这个 DNS 名连接
 spec:
   selector:
     app: mysql-user
@@ -1155,16 +1155,16 @@ docker build -t demo/product-service:1.0.0 . # product 同理（8082）
 
 **镜像与端口清单**（微服务指南基线的对照）：
 
-| 服务 | 镜像 | 容器端口 | k8s DNS 名 | Compose 宿主端口 |
-|---|---|---|---|---|
-| gateway | demo/gateway:1.0.0 | 8080 | gateway | 8080 |
-| user-service | demo/user-service:1.0.0 | 8081 | user-service | 8081 |
-| product-service | demo/product-service:1.0.0 | 8082 | product-service | 8082 |
-| order-service | demo/order-service:1.0.0 | 8083 | order-service | 8083 |
-| Nacos | nacos/nacos-server:v3.0.3 | 8848/9848 | nacos | 8848/9848/8084 |
-| mysql-user | mysql:8.0 | 3306 | mysql-user | 3307 |
-| mysql-product | mysql:8.0 | 3306 | mysql-product | 3308 |
-| mysql-order | mysql:8.0 | 3306 | mysql-order | 3309 |
+| 服务            | 镜像                       | 容器端口  | k8s DNS 名      | Compose 宿主端口 |
+| --------------- | -------------------------- | --------- | --------------- | ---------------- |
+| gateway         | demo/gateway:1.0.0         | 8080      | gateway         | 8080             |
+| user-service    | demo/user-service:1.0.0    | 8081      | user-service    | 8081             |
+| product-service | demo/product-service:1.0.0 | 8082      | product-service | 8082             |
+| order-service   | demo/order-service:1.0.0   | 8083      | order-service   | 8083             |
+| Nacos           | nacos/nacos-server:v3.0.3  | 8848/9848 | nacos           | 8848/9848/8084   |
+| mysql-user      | mysql:8.0                  | 3306      | mysql-user      | 3307             |
+| mysql-product   | mysql:8.0                  | 3306      | mysql-product   | 3308             |
+| mysql-order     | mysql:8.0                  | 3306      | mysql-order     | 3309             |
 
 ### 7.2 基础设施：三个 MySQL 与 Nacos
 
@@ -1196,7 +1196,7 @@ metadata:
   name: nacos
   namespace: ecommerce
 spec:
-  replicas: 1                # 学习用 standalone 单实例
+  replicas: 1 # 学习用 standalone 单实例
   selector:
     matchLabels:
       app: nacos
@@ -1207,7 +1207,7 @@ spec:
     spec:
       containers:
         - name: nacos
-          image: nacos/nacos-server:v3.0.3    # 与微服务指南一致
+          image: nacos/nacos-server:v3.0.3 # 与微服务指南一致
           env:
             - name: MODE
               value: "standalone"
@@ -1221,9 +1221,9 @@ spec:
             - name: NACOS_AUTH_IDENTITY_VALUE
               value: "local-learning"
           ports:
-            - containerPort: 8848   # HTTP API
-            - containerPort: 9848   # gRPC（Nacos 2.x 引入，3.x 沿用）
-            - containerPort: 8080   # 控制台
+            - containerPort: 8848 # HTTP API
+            - containerPort: 9848 # gRPC（Nacos 2.x 引入，3.x 沿用）
+            - containerPort: 8080 # 控制台
 ---
 apiVersion: v1
 kind: Service
@@ -1249,7 +1249,11 @@ spec:
 
 ```yaml
 healthcheck:
-  test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v1/ns/operator/metrics >/dev/null || exit 1"]
+  test:
+    [
+      "CMD-SHELL",
+      "curl -fsS http://localhost:8848/nacos/v1/ns/operator/metrics >/dev/null || exit 1",
+    ]
   interval: 10s
   timeout: 5s
   retries: 18
@@ -1258,14 +1262,14 @@ healthcheck:
 在 k8s 里，这个"命令式检查"变成 Deployment 的 readinessProbe（详细原理 §9.1）：
 
 ```yaml
-          readinessProbe:            # k8s 用 HTTP GET 探测，不必依赖容器内 curl
-            httpGet:
-              path: /nacos/v1/ns/operator/metrics
-              port: 8848
-            initialDelaySeconds: 20  # Nacos 启动慢，先等 20 秒
-            periodSeconds: 10        # 相当于 interval
-            timeoutSeconds: 5        # 相当于 timeout
-            failureThreshold: 18     # 相当于 retries
+readinessProbe: # k8s 用 HTTP GET 探测，不必依赖容器内 curl
+  httpGet:
+    path: /nacos/v1/ns/operator/metrics
+    port: 8848
+  initialDelaySeconds: 20 # Nacos 启动慢，先等 20 秒
+  periodSeconds: 10 # 相当于 interval
+  timeoutSeconds: 5 # 相当于 timeout
+  failureThreshold: 18 # 相当于 retries
 ```
 
 加上探针后，Pod 的 READY 由探测结果决定——`kubectl get pods` 看到 1/1 才是真的"可用"。
@@ -1283,7 +1287,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      initContainers:                       # 启动顺序：等 Nacos 就绪
+      initContainers: # 启动顺序：等 Nacos 就绪
         - name: wait-nacos
           image: curlimages/curl:8.12.1
           command:
@@ -1304,7 +1308,7 @@ spec:
       volumes:
         - name: nacos-config
           configMap:
-            name: nacos-config-files      # §5.3 的 volume 挂载方式
+            name: nacos-config-files # §5.3 的 volume 挂载方式
 ```
 
 `nacos-config-files` 这个 ConfigMap 把微服务项目 `infra/nacos/` 下的 YAML（已按 §7.2 改成 DNS 名）收纳为文件。创建方式：
@@ -1334,7 +1338,7 @@ metadata:
   labels:
     app: order-service
 spec:
-  replicas: 2                       # 无状态服务，生产姿势从 2 副本开始
+  replicas: 2 # 无状态服务，生产姿势从 2 副本开始
   selector:
     matchLabels:
       app: order-service
@@ -1353,7 +1357,7 @@ spec:
             # 只改部署配置，不动业务代码（本地 application.yml 里的值被覆盖）
             - name: SPRING_CLOUD_NACOS_SERVER_ADDR
               value: "nacos:8848"
-          resources:                 # §3.4 的生产纪律
+          resources: # §3.4 的生产纪律
             requests:
               cpu: "250m"
               memory: "512Mi"
@@ -1663,15 +1667,15 @@ spec:
 
 把 §1.3 的对照表反过来看，会发现一件有意思的事：**很多当初用 Spring Cloud 解决的问题，k8s 自己就内建了**：
 
-| 当初 Spring Cloud 解决的问题 | k8s 的内建能力 | 重叠度 |
-|---|---|---|
-| 服务发现（Nacos Discovery：实例在哪） | Service + CoreDNS（§4.2） | 高 |
-| 客户端负载均衡（LoadBalancer：调哪个实例） | Service 的 kube-proxy 负载均衡 | 高 |
-| 配置中心（Nacos Config：集中管理配置） | ConfigMap / Secret（§5） | 中 |
-| 健康检查与实例摘除（Nacos 心跳） | liveness/readiness 探针（§9.1） | 中 |
-| 网关统一入口（Gateway 路由） | Ingress（七层路由部分） | 中 |
-| 流量控制、熔断降级（Sentinel） | 无内建对应物 | 无 |
-| 链路追踪（SkyWalking） | 无内建对应物 | 无 |
+| 当初 Spring Cloud 解决的问题               | k8s 的内建能力                  | 重叠度 |
+| ------------------------------------------ | ------------------------------- | ------ |
+| 服务发现（Nacos Discovery：实例在哪）      | Service + CoreDNS（§4.2）       | 高     |
+| 客户端负载均衡（LoadBalancer：调哪个实例） | Service 的 kube-proxy 负载均衡  | 高     |
+| 配置中心（Nacos Config：集中管理配置）     | ConfigMap / Secret（§5）        | 中     |
+| 健康检查与实例摘除（Nacos 心跳）           | liveness/readiness 探针（§9.1） | 中     |
+| 网关统一入口（Gateway 路由）               | Ingress（七层路由部分）         | 中     |
+| 流量控制、熔断降级（Sentinel）             | 无内建对应物                    | 无     |
+| 链路追踪（SkyWalking）                     | 无内建对应物                    | 无     |
 
 结论先摆出来：**重叠的是"基础设施三件套"（发现/负载均衡/配置），不重叠的是"应用治理"（限流/熔断/追踪）**。要不要退休，本质是判断重叠部分的取舍。
 
@@ -1714,7 +1718,7 @@ spring:
   cloud:
     kubernetes:
       discovery:
-        enabled: true        # 服务发现走 k8s API
+        enabled: true # 服务发现走 k8s API
 ```
 
 Feign 代码 `@FeignClient("product-service")` 原样可用——`product-service` 从"Nacos 服务名"变成了"k8s DNS 名"（§4.2）。
@@ -1731,15 +1735,15 @@ kubectl delete -f 12-deploy-nacos.yaml -f 13-job-nacos-init.yaml
 
 ### 8.4 对比表与选型建议
 
-| 维度 | 路线 A：保留 Nacos | 路线 B：k8s 原生 |
-|---|---|---|
-| 代码改动 | 零（§7 已验证） | 换一个依赖 + 几行配置 |
-| 组件数量 | +Nacos（要运维） | 组件最少 |
-| 跨环境一致性 | 好（VM/k8s 混合统一） | 仅限 k8s 内 |
-| 配置管理 | 动态推送、版本、灰度 | ConfigMap 静态为主 |
-| 运维复杂度 | 中间件运维成本 | 依赖 k8s 平台成熟度 |
-| 负载均衡策略 | 可精细控制 | 简单轮询 |
-| 团队学习成本 | 低（延续现状） | 需要理解 k8s 网络 |
+| 维度         | 路线 A：保留 Nacos    | 路线 B：k8s 原生      |
+| ------------ | --------------------- | --------------------- |
+| 代码改动     | 零（§7 已验证）       | 换一个依赖 + 几行配置 |
+| 组件数量     | +Nacos（要运维）      | 组件最少              |
+| 跨环境一致性 | 好（VM/k8s 混合统一） | 仅限 k8s 内           |
+| 配置管理     | 动态推送、版本、灰度  | ConfigMap 静态为主    |
+| 运维复杂度   | 中间件运维成本        | 依赖 k8s 平台成熟度   |
+| 负载均衡策略 | 可精细控制            | 简单轮询              |
+| 团队学习成本 | 低（延续现状）        | 需要理解 k8s 网络     |
 
 **选型建议（务实版）**：
 
@@ -1807,34 +1811,34 @@ Seata             保留（按需）            分布式事务与应用强相�
 └────────────────────────────────────────────────────────────────┘
 ```
 
-| 探针 | 回答的问题 | 失败后果 | 对照 Compose |
-|---|---|---|---|
-| startupProbe | "启动完成了吗" | 重启容器 | healthcheck 的前半段 |
-| livenessProbe | "还活着吗（是否僵死）" | 重启容器 | healthcheck 的持续检查 |
-| readinessProbe | "可以接流量吗" | 摘除流量，不重启 | healthcheck + depends_on |
+| 探针           | 回答的问题             | 失败后果         | 对照 Compose             |
+| -------------- | ---------------------- | ---------------- | ------------------------ |
+| startupProbe   | "启动完成了吗"         | 重启容器         | healthcheck 的前半段     |
+| livenessProbe  | "还活着吗（是否僵死）" | 重启容器         | healthcheck 的持续检查   |
+| readinessProbe | "可以接流量吗"         | 摘除流量，不重启 | healthcheck + depends_on |
 
 三种探测方式：`httpGet`（HTTP 状态码，最常用）、`tcpSocket`（端口通不通）、`exec`（容器内跑命令，最像 Compose 的 CMD-SHELL）。
 
 以 Spring Boot 应用为例（httpGet 版）：
 
 ```yaml
-          startupProbe:               # 启动慢的应用先给足耐心
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8083
-            failureThreshold: 30      # 最多失败 30 次（约 5 分钟）才判失败
-            periodSeconds: 10
-          livenessProbe:              # 僵死检查：失败就重启
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8083
-            periodSeconds: 10
-          readinessProbe:             # 流量闸门：就绪才进 Service 后端
-            httpGet:
-              path: /actuator/health/readiness
-              port: 8083
-            initialDelaySeconds: 5
-            periodSeconds: 5
+startupProbe: # 启动慢的应用先给足耐心
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8083
+  failureThreshold: 30 # 最多失败 30 次（约 5 分钟）才判失败
+  periodSeconds: 10
+livenessProbe: # 僵死检查：失败就重启
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8083
+  periodSeconds: 10
+readinessProbe: # 流量闸门：就绪才进 Service 后端
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8083
+  initialDelaySeconds: 5
+  periodSeconds: 5
 ```
 
 > **§7.2 的回响**：Nacos 的 readinessProbe 直接探测 `/nacos/v1/ns/operator/metrics`，就是 Compose healthcheck 那条命令的"HTTP 化"。学会了这一章，回看 §7.2 就明白为什么那样写。
@@ -1887,12 +1891,12 @@ spring.lifecycle.timeout-per-shutdown-phase=30s
 ```yaml
 spec:
   replicas: 2
-  strategy:                    # 发布策略
-    type: RollingUpdate        # 默认滚动更新（另一个是 Recreate：先全删再全建）
+  strategy: # 发布策略
+    type: RollingUpdate # 默认滚动更新（另一个是 Recreate：先全删再全建）
     rollingUpdate:
-      maxSurge: 1              # 发布时最多多出几个 Pod（峰值 = replicas + maxSurge）
-      maxUnavailable: 0        # 发布时最多允许几个 Pod 不可用（0 = 一个都不能少）
-  minReadySeconds: 10          # 新 Pod 就绪后观察 10 秒再继续，防"假就绪"
+      maxSurge: 1 # 发布时最多多出几个 Pod（峰值 = replicas + maxSurge）
+      maxUnavailable: 0 # 发布时最多允许几个 Pod 不可用（0 = 一个都不能少）
+  minReadySeconds: 10 # 新 Pod 就绪后观察 10 秒再继续，防"假就绪"
 ```
 
 ```
@@ -1980,13 +1984,13 @@ kubectl rollout history -n ecommerce deploy/order-service
 
 ### 10.3 常见误区
 
-| 误区 | 事实 |
-|---|---|
-| "上了 k8s 系统就高可用了" | k8s 只提供机制；副本数、探针、存储、跨可用区都要自己配 |
-| "k8s 是银弹，所有服务都上" | 数据库、MQ、批处理任务各有各的坑（§6.4、§12.3） |
+| 误区                           | 事实                                                      |
+| ------------------------------ | --------------------------------------------------------- |
+| "上了 k8s 系统就高可用了"      | k8s 只提供机制；副本数、探针、存储、跨可用区都要自己配    |
+| "k8s 是银弹，所有服务都上"     | 数据库、MQ、批处理任务各有各的坑（§6.4、§12.3）           |
 | "Compose 能跑，k8s 肯定也能跑" | 端口、存储、健康检查、启动顺序都要重新翻译（§7 全程演示） |
-| "探针可有可无" | 没有探针，滚动发布就是在裸奔——"假就绪"直接放流量 |
-| "Secret 是加密的" | base64 而已（§5.4），安全靠 RBAC 与加密方案 |
+| "探针可有可无"                 | 没有探针，滚动发布就是在裸奔——"假就绪"直接放流量          |
+| "Secret 是加密的"              | base64 而已（§5.4），安全靠 RBAC 与加密方案               |
 
 > **避坑心得**：本指南的 §5~§9 每一章的"生产实践"小节，都是对某一个误区的正面回应。回看目录里的"生产实践"标题，就是一份浓缩的避坑清单。
 
@@ -2041,13 +2045,13 @@ spec:
           image: <镜像:版本>
           ports:
             - containerPort: <容器端口>
-          env:                              # 环境变量（§5.3）
+          env: # 环境变量（§5.3）
             - name: <变量名>
               value: <值>
-          resources:                        # 生产必填（§3.4）
+          resources: # 生产必填（§3.4）
             requests: { cpu: 250m, memory: 512Mi }
             limits: { cpu: 1000m, memory: 1Gi }
-          readinessProbe:                   # 探针（§9.1）
+          readinessProbe: # 探针（§9.1）
             httpGet:
               path: /actuator/health/readiness
               port: <容器端口>
@@ -2067,31 +2071,31 @@ spec:
 
 ### 11.3 Compose 与 k8s 对照速查
 
-| Compose | k8s | 关键差异 |
-|---|---|---|
-| `services: xxx` | Deployment + Service | 一个服务拆两个对象 |
-| `image:` | `containers[].image` | 一致 |
-| `environment:` | ConfigMap / Secret + env | 配置外置 |
-| `ports: "8083:8083"` | containerPort + Service | 声明与暴露分离 |
-| `volumes:`（命名卷） | PVC + PV | 申请与供给分离 |
-| `depends_on` + healthcheck | initContainer + readinessProbe | 顺序靠"等待就绪" |
-| `healthcheck` | 三种 Probe | 命令式 → 探测式 |
-| `restart: always` | Deployment 自愈 | 内建，无需声明 |
-| `scale` | replicas / HPA | 手动 / 自动 |
-| 服务名互访 | k8s DNS（§4.2） | 体验一致，机制不同 |
-| `up -d` | `kubectl apply -f` | 都朝期望状态收敛 |
+| Compose                    | k8s                            | 关键差异           |
+| -------------------------- | ------------------------------ | ------------------ |
+| `services: xxx`            | Deployment + Service           | 一个服务拆两个对象 |
+| `image:`                   | `containers[].image`           | 一致               |
+| `environment:`             | ConfigMap / Secret + env       | 配置外置           |
+| `ports: "8083:8083"`       | containerPort + Service        | 声明与暴露分离     |
+| `volumes:`（命名卷）       | PVC + PV                       | 申请与供给分离     |
+| `depends_on` + healthcheck | initContainer + readinessProbe | 顺序靠"等待就绪"   |
+| `healthcheck`              | 三种 Probe                     | 命令式 → 探测式    |
+| `restart: always`          | Deployment 自愈                | 内建，无需声明     |
+| `scale`                    | replicas / HPA                 | 手动 / 自动        |
+| 服务名互访                 | k8s DNS（§4.2）                | 体验一致，机制不同 |
+| `up -d`                    | `kubectl apply -f`             | 都朝期望状态收敛   |
 
 ### 11.4 常见故障排查速查
 
-| 症状 | 先查 | 常见原因 |
-|---|---|---|
-| Pod Pending | `describe pod` 看 Events | 资源不足、PVC 没绑上、镜像拉取失败 |
-| Pod CrashLoopBackOff | `logs` + `describe` | 启动即崩：配置错、探针路径错、依赖连不上 |
-| Pod Running 但 READY 0/1 | `describe` 看 readiness 探测 | 探针失败：端口错、endpoint 错、依赖未就绪 |
-| 服务间调不通 | 查 Service 的 selector 与 Pod 标签 | 标签不匹配（最常见）；端口写错 |
-| DNS 解析失败 | 检查是否同命名空间 | 跨命名空间要用全名 `xxx.svc.cluster.local` |
-| 数据丢了 | 查 Pod 是否用了 PVC | 裸容器文件系统即抛（§6.0） |
-| 滚动更新卡住 | `rollout status` 看进度 | 新 Pod 一直不就绪（探针假失败）或镜像拉不下来 |
+| 症状                     | 先查                               | 常见原因                                      |
+| ------------------------ | ---------------------------------- | --------------------------------------------- |
+| Pod Pending              | `describe pod` 看 Events           | 资源不足、PVC 没绑上、镜像拉取失败            |
+| Pod CrashLoopBackOff     | `logs` + `describe`                | 启动即崩：配置错、探针路径错、依赖连不上      |
+| Pod Running 但 READY 0/1 | `describe` 看 readiness 探测       | 探针失败：端口错、endpoint 错、依赖未就绪     |
+| 服务间调不通             | 查 Service 的 selector 与 Pod 标签 | 标签不匹配（最常见）；端口写错                |
+| DNS 解析失败             | 检查是否同命名空间                 | 跨命名空间要用全名 `xxx.svc.cluster.local`    |
+| 数据丢了                 | 查 Pod 是否用了 PVC                | 裸容器文件系统即抛（§6.0）                    |
+| 滚动更新卡住             | `rollout status` 看进度            | 新 Pod 一直不就绪（探针假失败）或镜像拉不下来 |
 
 ---
 
@@ -2133,7 +2137,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 60   # 平均 CPU 超 60% 就扩容
+          averageUtilization: 60 # 平均 CPU 超 60% 就扩容
 ```
 
 前置条件：metrics-server 组件、所有容器写了 resources.requests（§3.4 又闭环了——requests 是 HPA 计算的依据）。
@@ -2149,7 +2153,7 @@ Kafka on k8s 的最小认知地图：
   PVC 模板：每个 broker 独立数据卷
 ```
 
-学习建议：先用官方 Helm Chart 或 Operator（如 Strimzi）起步，不要手写 StatefulSet——这些项目把上述难点都封装好了。本指南只求你在架构图上认出它们的位置。
+学习建议：先用官方 Helm Chart 或 Operator（如 Strimzi）起步，不要手写 StatefulSet——这些项目把上述难点都封装好了。本指南只求你在架构图上认出它们的位置。上 k8s 之前，先把 Kafka 本身学透：[Kafka 与 Spring Boot 渐进式指南](../Spring/kafka-spring-boot-guide.md)。
 
 ### 12.4 SkyWalking 上 k8s
 

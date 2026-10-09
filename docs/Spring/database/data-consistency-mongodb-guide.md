@@ -222,7 +222,7 @@ Spring Data MongoDB 可以通过配置自动创建注解声明的索引：
 spring:
   data:
     mongodb:
-      auto-index-creation: true  # 开发环境可开启，生产环境建议关闭
+      auto-index-creation: true # 开发环境可开启，生产环境建议关闭
 ```
 
 注意配置键的正确路径：`spring.data.mongodb.auto-index-creation`，不是 `spring.mongodb.auto-index-creation`。
@@ -232,7 +232,7 @@ spring:
 在 mongosh 中连接到目标数据库后查看实际索引：
 
 ```javascript
-db.accounts.getIndexes()
+db.accounts.getIndexes();
 ```
 
 检查结果是否包含预期的字段索引、正确的键以及 `unique: true`。注意：集合名由 `@Document(collection = "...")` 指定或按命名策略自动生成，不会因为 Java 类名改变就自动变更。
@@ -244,9 +244,9 @@ db.accounts.getIndexes()
 ```javascript
 // 检查是否有重复值
 db.accounts.aggregate([
-    { $group: { _id: "$accountNo", count: { $sum: 1 } } },
-    { $match: { count: { $gt: 1 } } }
-])
+  { $group: { _id: "$accountNo", count: { $sum: 1 } } },
+  { $match: { count: { $gt: 1 } } },
+]);
 ```
 
 已有重复数据会导致建索引失败。应先制定数据处理方案，再通过可追踪的迁移步骤发布索引并验证结果。
@@ -426,7 +426,7 @@ public void processCleanupTasks() {
 
 ```javascript
 // 在 mongosh 中执行
-db.adminCommand({ replSetGetStatus: 1 })
+db.adminCommand({ replSetGetStatus: 1 });
 // 确认返回副本集状态，而非 "not running with --replSet" 错误
 ```
 
@@ -447,25 +447,25 @@ db.<collection>.getIndexes()
 
 ```javascript
 // 在副本集环境中尝试一个简单事务
-const session = db.getMongo().startSession()
-session.startTransaction()
+const session = db.getMongo().startSession();
+session.startTransaction();
 try {
-    session.getDatabase("test").testcol.insertOne({ x: 1 })
-    session.commitTransaction()
-    print("事务支持正常")
+  session.getDatabase("test").testcol.insertOne({ x: 1 });
+  session.commitTransaction();
+  print("事务支持正常");
 } catch (e) {
-    session.abortTransaction()
-    print("事务失败: " + e.message)
+  session.abortTransaction();
+  print("事务失败: " + e.message);
 }
-session.endSession()
+session.endSession();
 ```
 
 ### 9.4 配置键核验
 
-| 用途 | 正确配置键 |
-| --- | --- |
-| MongoDB 连接 URI | `spring.data.mongodb.uri` |
-| 自动创建索引 | `spring.data.mongodb.auto-index-creation` |
+| 用途             | 正确配置键                                |
+| ---------------- | ----------------------------------------- |
+| MongoDB 连接 URI | `spring.data.mongodb.uri`                 |
+| 自动创建索引     | `spring.data.mongodb.auto-index-creation` |
 
 确认配置键前缀正确，不要使用 `spring.mongodb.uri` 等错误前缀。
 
